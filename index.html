@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D File Browser</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: #0a0a0a;
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+      color: white;
+    }
+    
+    #container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    
+    #canvas {
+      display: block;
+    }
+    
+    #info-panel {
+      position: absolute;
+      left: 20px;
+      top: 20px;
+      width: 300px;
+      background: rgba(20, 20, 20, 0.9);
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+    }
+    
+    #info-panel h3 {
+      margin-bottom: 10px;
+      color: #00ff88;
+    }
+    
+    #info-panel p {
+      margin-bottom: 8px;
+      color: #ccc;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="canvas"></canvas>
+    <div id="info-panel">
+      <h3>File Browser 3D</h3>
+      <p>Use mouse to navigate</p>
+      <p>Scroll to move through files</p>
+    </div>
+  </div>
+  <script type="module" src="/src/index.ts"></script>
+</body>
+</html>
