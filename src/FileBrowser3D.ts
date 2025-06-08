@@ -256,6 +256,13 @@ export class FileBrowser3D {
     // Smooth scroll offset animation
     this.scrollOffset += direction;
     
+    // Calculate positions relative to selected card to keep it centered
+    const selectedBasePosition = {
+      x: (this.currentIndex * 1.5) * 0.7,
+      y: (this.currentIndex * 1.5) * 0.7,
+      z: -(this.currentIndex * 1.5) * 0.7
+    };
+
     // Animate all cards with smooth easing
     this.cards.forEach((card, index) => {
       const isSelected = index === this.currentIndex;
@@ -266,17 +273,17 @@ export class FileBrowser3D {
         z: -(index * 1.5) * 0.7
       };
       
-      // Add scroll offset to create flowing movement along diagonal plane
-      const scrolledPosition = {
-        x: basePosition.x - (this.scrollOffset * 1.5),
-        y: basePosition.y - (this.scrollOffset * 1.5),  // Move down-left when scrolling
-        z: basePosition.z + (this.scrollOffset * 1.5)
+      // Position relative to selected card (keeps selected card centered)
+      const centeredPosition = {
+        x: basePosition.x - selectedBasePosition.x,
+        y: basePosition.y - selectedBasePosition.y,
+        z: basePosition.z - selectedBasePosition.z
       };
       
       // Selected card gets a lift
       if (isSelected) {
-        scrolledPosition.y += 0.8;
-        scrolledPosition.z += 0.3;
+        centeredPosition.y += 0.8;
+        centeredPosition.z += 0.3;
       }
       
       // Smooth animations with responsive easing
@@ -289,9 +296,9 @@ export class FileBrowser3D {
       });
       
       gsap.to(card.position, {
-        x: scrolledPosition.x,
-        y: scrolledPosition.y,
-        z: scrolledPosition.z,
+        x: centeredPosition.x,
+        y: centeredPosition.y,
+        z: centeredPosition.z,
         duration: 0.8,
         ease: "power2.out"
       });
@@ -299,9 +306,9 @@ export class FileBrowser3D {
       // Update physics body position
       if (this.cardBodies[index]) {
         gsap.to(this.cardBodies[index].position, {
-          x: scrolledPosition.x,
-          y: scrolledPosition.y,
-          z: scrolledPosition.z,
+          x: centeredPosition.x,
+          y: centeredPosition.y,
+          z: centeredPosition.z,
           duration: 0.8,
           ease: "power2.out",
           onComplete: () => {
