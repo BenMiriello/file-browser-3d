@@ -12,9 +12,9 @@ export interface FileItem {
 
 export class FileBrowser3D {
   private scene: THREE.Scene;
-  private camera: THREE.OrthographicCamera;
-  private renderer: THREE.WebGLRenderer;
-  private world: CANNON.World;
+  private camera!: THREE.OrthographicCamera;
+  private renderer!: THREE.WebGLRenderer;
+  private world!: CANNON.World;
   private cards: THREE.Group[] = [];
   private cardBodies: CANNON.Body[] = [];
   private currentIndex = 0;
@@ -22,7 +22,7 @@ export class FileBrowser3D {
   private touchStartX = 0;
   private touchStartY = 0;
   private scrollOffset = 0;
-  
+
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
     this.setupCamera();
@@ -34,16 +34,16 @@ export class FileBrowser3D {
   private setupCamera(): void {
     const aspect = window.innerWidth / window.innerHeight;
     const frustumSize = 10;
-    
+
     this.camera = new THREE.OrthographicCamera(
-      -frustumSize * aspect / 2,
-      frustumSize * aspect / 2,
+      (-frustumSize * aspect) / 2,
+      (frustumSize * aspect) / 2,
       frustumSize / 2,
       -frustumSize / 2,
       0.1,
       1000
     );
-    
+
     // Position camera for isometric view
     this.camera.position.set(10, 10, 10);
     this.camera.lookAt(0, 0, 0);
@@ -53,9 +53,9 @@ export class FileBrowser3D {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
-      alpha: true
+      alpha: true,
     });
-    
+
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0a0a0a, 1);
@@ -67,11 +67,14 @@ export class FileBrowser3D {
 
   private setupPhysics(): void {
     this.world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, 0, 0)
+      gravity: new CANNON.Vec3(0, 0, 0),
     });
-    
+
     this.world.broadphase = new CANNON.NaiveBroadphase();
-    this.world.solver.iterations = 10;
+    // Set solver iterations if available
+    if ('iterations' in this.world.solver) {
+      (this.world.solver as any).iterations = 10;
+    }
     this.world.defaultContactMaterial.friction = 0.4;
     this.world.defaultContactMaterial.restitution = 0.3;
   }
@@ -107,10 +110,10 @@ export class FileBrowser3D {
 
   private createCard(fileItem: FileItem, index: number): THREE.Group {
     const cardGroup = new THREE.Group();
-    
+
     // Card geometry - 50% smaller, file-shaped
     const cardGeometry = new THREE.BoxGeometry(1.75, 2.25, 0.075);
-    
+
     // Material based on file type - medium grey for visibility
     const isFolder = fileItem.type === 'folder';
     const cardMaterial = new THREE.MeshPhysicalMaterial({
@@ -120,38 +123,38 @@ export class FileBrowser3D {
       clearcoat: 0.5,
       clearcoatRoughness: 0.1,
       transmission: 0,
-      thickness: 0.5
+      thickness: 0.5,
     });
-    
+
     const cardMesh = new THREE.Mesh(cardGeometry, cardMaterial);
     cardMesh.castShadow = true;
     cardMesh.receiveShadow = true;
-    
+
     // Add icon/text (simplified for now)
     const iconGeometry = new THREE.PlaneGeometry(0.5, 0.5);
     const iconMaterial = new THREE.MeshBasicMaterial({
       color: isFolder ? 0x00ff88 : 0x0088ff,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.8,
     });
     const iconMesh = new THREE.Mesh(iconGeometry, iconMaterial);
     iconMesh.position.z = 0.06;
-    
+
     // Rotate card for proper orientation (right side higher)
-    cardGroup.rotation.z = 0.15;  // Right side higher
-    cardGroup.rotation.x = 0.1;   // Forward lean
-    
+    cardGroup.rotation.z = 0.15; // Right side higher
+    cardGroup.rotation.x = 0.1; // Forward lean
+
     cardGroup.add(cardMesh);
     cardGroup.add(iconMesh);
-    
+
     // Position cards in true diagonal formation (top-left to bottom-right)
     const diagonalOffset = index * 1.5;
     cardGroup.position.set(
-      diagonalOffset * 0.7,   // x offset (right)
-      diagonalOffset * 0.7,   // y offset (up) - creates top-left to bottom-right
-      -diagonalOffset * 0.7   // z offset (back)
+      diagonalOffset * 0.7, // x offset (right)
+      diagonalOffset * 0.7, // y offset (up) - creates top-left to bottom-right
+      -diagonalOffset * 0.7 // z offset (back)
     );
-    
+
     // Add physics body with no mass (kinematic) - smaller size
     const cardShape = new CANNON.Box(new CANNON.Vec3(0.875, 1.125, 0.0375));
     const cardBody = new CANNON.Body({
@@ -161,12 +164,12 @@ export class FileBrowser3D {
         cardGroup.position.x,
         cardGroup.position.y,
         cardGroup.position.z
-      )
+      ),
     });
-    
+
     this.world.addBody(cardBody);
     this.cardBodies.push(cardBody);
-    
+
     return cardGroup;
   }
 
@@ -179,40 +182,42 @@ export class FileBrowser3D {
       { name: 'config.json', type: 'file', size: 512, path: '/config.json' },
       { name: 'Music', type: 'folder', path: '/Music', children: [] },
       { name: 'Videos', type: 'folder', path: '/Videos', children: [] },
-      { name: 'script.js', type: 'file', size: 2048, path: '/script.js' }
+      { name: 'script.js', type: 'file', size: 2048, path: '/script.js' },
     ];
   }
 
   private setupEventListeners(): void {
     // Mouse wheel for navigation
-    this.canvas.addEventListener('wheel', (event) => {
+    this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
       if (this.isAnimating) return;
-      
+
       const delta = Math.sign(event.deltaY);
       this.navigateCards(delta);
     });
 
     // Touch events for mobile
-    this.canvas.addEventListener('touchstart', (event) => {
+    this.canvas.addEventListener('touchstart', event => {
       event.preventDefault();
       const touch = event.touches[0];
+      if (!touch) return;
       this.touchStartX = touch.clientX;
       this.touchStartY = touch.clientY;
     });
 
-    this.canvas.addEventListener('touchmove', (event) => {
+    this.canvas.addEventListener('touchmove', event => {
       event.preventDefault();
     });
 
-    this.canvas.addEventListener('touchend', (event) => {
+    this.canvas.addEventListener('touchend', event => {
       event.preventDefault();
       if (event.changedTouches.length === 0) return;
-      
+
       const touch = event.changedTouches[0];
+      if (!touch) return;
       const deltaX = touch.clientX - this.touchStartX;
       const deltaY = touch.clientY - this.touchStartY;
-      
+
       // Determine swipe direction
       const threshold = 50;
       if (Math.abs(deltaX) > threshold || Math.abs(deltaY) > threshold) {
@@ -232,35 +237,37 @@ export class FileBrowser3D {
     window.addEventListener('resize', () => {
       const aspect = window.innerWidth / window.innerHeight;
       const frustumSize = 10;
-      
-      this.camera.left = -frustumSize * aspect / 2;
-      this.camera.right = frustumSize * aspect / 2;
+
+      this.camera.left = (-frustumSize * aspect) / 2;
+      this.camera.right = (frustumSize * aspect) / 2;
       this.camera.top = frustumSize / 2;
       this.camera.bottom = -frustumSize / 2;
       this.camera.updateProjectionMatrix();
-      
+
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
   }
 
   private navigateCards(direction: number): void {
     if (this.isAnimating) return;
-    
-    const oldIndex = this.currentIndex;
-    const newIndex = Math.max(0, Math.min(this.cards.length - 1, this.currentIndex + direction));
+
+    const newIndex = Math.max(
+      0,
+      Math.min(this.cards.length - 1, this.currentIndex + direction)
+    );
     if (newIndex === this.currentIndex) return;
-    
+
     this.currentIndex = newIndex;
     this.isAnimating = true;
-    
+
     // Smooth scroll offset animation
     this.scrollOffset += direction;
-    
+
     // Calculate positions relative to selected card to keep it centered
     const selectedBasePosition = {
-      x: (this.currentIndex * 1.5) * 0.7,
-      y: (this.currentIndex * 1.5) * 0.7,
-      z: -(this.currentIndex * 1.5) * 0.7
+      x: this.currentIndex * 1.5 * 0.7,
+      y: this.currentIndex * 1.5 * 0.7,
+      z: -(this.currentIndex * 1.5) * 0.7,
     };
 
     // Animate all cards with smooth easing
@@ -268,41 +275,41 @@ export class FileBrowser3D {
       const isSelected = index === this.currentIndex;
       const scale = isSelected ? 1.15 : 1.0;
       const basePosition = {
-        x: (index * 1.5) * 0.7,
-        y: (index * 1.5) * 0.7,  // Positive Y for top-left to bottom-right
-        z: -(index * 1.5) * 0.7
+        x: index * 1.5 * 0.7,
+        y: index * 1.5 * 0.7, // Positive Y for top-left to bottom-right
+        z: -(index * 1.5) * 0.7,
       };
-      
+
       // Position relative to selected card (keeps selected card centered)
       const centeredPosition = {
         x: basePosition.x - selectedBasePosition.x,
         y: basePosition.y - selectedBasePosition.y,
-        z: basePosition.z - selectedBasePosition.z
+        z: basePosition.z - selectedBasePosition.z,
       };
-      
+
       // Selected card gets a lift
       if (isSelected) {
         centeredPosition.y += 0.8;
         centeredPosition.z += 0.3;
       }
-      
+
       // Smooth animations with responsive easing
       gsap.to(card.scale, {
         x: scale,
         y: scale,
         z: scale,
         duration: 0.8,
-        ease: "power2.out"
+        ease: 'power2.out',
       });
-      
+
       gsap.to(card.position, {
         x: centeredPosition.x,
         y: centeredPosition.y,
         z: centeredPosition.z,
         duration: 0.8,
-        ease: "power2.out"
+        ease: 'power2.out',
       });
-      
+
       // Update physics body position
       if (this.cardBodies[index]) {
         gsap.to(this.cardBodies[index].position, {
@@ -310,12 +317,12 @@ export class FileBrowser3D {
           y: centeredPosition.y,
           z: centeredPosition.z,
           duration: 0.8,
-          ease: "power2.out",
+          ease: 'power2.out',
           onComplete: () => {
             if (index === this.currentIndex) {
               this.isAnimating = false;
             }
-          }
+          },
         });
       }
     });
@@ -323,20 +330,21 @@ export class FileBrowser3D {
 
   private animate(): void {
     requestAnimationFrame(() => this.animate());
-    
+
     // Update physics
-    this.world.step(1/60);
-    
+    this.world.step(1 / 60);
+
     // Only sync physics if not animating (let GSAP control during animations)
     if (!this.isAnimating) {
       this.cards.forEach((card, index) => {
-        if (this.cardBodies[index]) {
-          card.position.copy(this.cardBodies[index].position as any);
-          card.quaternion.copy(this.cardBodies[index].quaternion as any);
+        const body = this.cardBodies[index];
+        if (body) {
+          card.position.copy(body.position as any);
+          card.quaternion.copy(body.quaternion as any);
         }
       });
     }
-    
+
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -348,13 +356,14 @@ export class FileBrowser3D {
       this.cards.push(card);
       this.scene.add(card);
     });
-    
+
     // Highlight first card
-    if (this.cards.length > 0) {
-      this.cards[0].scale.setScalar(1.1);
-      this.cards[0].position.y += 0.5;
+    const firstCard = this.cards[0];
+    if (firstCard) {
+      firstCard.scale.setScalar(1.1);
+      firstCard.position.y += 0.5;
     }
-    
+
     this.setupEventListeners();
     this.animate();
   }

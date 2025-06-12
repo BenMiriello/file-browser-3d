@@ -1,6 +1,3 @@
-import * as THREE from 'three';
-import { gsap } from 'gsap';
-import * as CANNON from 'cannon-es';
 import { FileBrowser3D } from './FileBrowser3D';
 
 export { FileBrowser3D };

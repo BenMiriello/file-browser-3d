@@ -7,10 +7,29 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "vite",
+    "dev:claude": "vite --port 3001",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src --ext .js,.ts",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.{ts,js,json}",
+    "format:check": "prettier --check src/**/*.{ts,js,json}",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "test:visual": "playwright test",
+    "test:visual:ui": "playwright test --ui",
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:visual:claude": "playwright test --config=playwright-claude.config.ts",
+    "test:visual:claude:ui": "playwright test --config=playwright-claude.config.ts --ui",
+    "screenshot": "npx tsx scripts/screenshot.ts",
+    "screenshot:claude": "npx tsx scripts/screenshot-claude.ts",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   },
   "keywords": [
     "3d",
@@ -24,15 +43,25 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "three": "^0.169.0",
+    "cannon-es": "^0.20.0",
     "gsap": "^3.12.5",
-    "cannon-es": "^0.20.0"
+    "three": "^0.169.0"
   },
   "devDependencies": {
-    "vite": "^5.4.8",
-    "typescript": "^5.6.2",
+    "@playwright/test": "^1.53.0",
+    "@types/node": "^24.0.1",
     "@types/three": "^0.169.0",
-    "eslint": "^9.12.0"
+    "@typescript-eslint/eslint-plugin": "^8.34.0",
+    "@typescript-eslint/parser": "^8.34.0",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^10.1.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.0",
+    "playwright": "^1.53.0",
+    "prettier": "^3.5.3",
+    "tsx": "^4.20.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
   },
   "files": [
     "dist"
