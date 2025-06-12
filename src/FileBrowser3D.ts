@@ -44,8 +44,8 @@ export class FileBrowser3D {
       1000
     );
 
-    // Position camera for isometric view
-    this.camera.position.set(10, 10, 10);
+    // Position camera isometrically from above and to the left
+    this.camera.position.set(-8, 8, 8);
     this.camera.lookAt(0, 0, 0);
   }
 
@@ -140,9 +140,10 @@ export class FileBrowser3D {
     const iconMesh = new THREE.Mesh(iconGeometry, iconMaterial);
     iconMesh.position.z = 0.06;
 
-    // Rotate card for proper orientation (right side higher)
-    cardGroup.rotation.z = 0.15; // Right side higher
-    cardGroup.rotation.x = 0.1; // Forward lean
+    // Rotate card to counteract isometric camera perspective
+    cardGroup.rotation.z = 0; // No left/right tilt - keep flat
+    cardGroup.rotation.x = 0.1; // Slight forward lean
+    cardGroup.rotation.y = 0; // Reset rotation for perspective camera test
 
     cardGroup.add(cardMesh);
     cardGroup.add(iconMesh);

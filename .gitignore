@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Screenshots (development screenshots are in ../notes/chat/screenshots/)
+screenshots/
+
 # Build outputs
 dist/
 build/
