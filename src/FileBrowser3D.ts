@@ -147,11 +147,11 @@ export class FileBrowser3D {
     cardGroup.add(cardMesh);
     cardGroup.add(iconMesh);
 
-    // Position cards in true diagonal formation (top-left to bottom-right)
+    // Position cards in diagonal formation (top-left to bottom-right)
     const diagonalOffset = index * 1.5;
     cardGroup.position.set(
       diagonalOffset * 0.7, // x offset (right)
-      diagonalOffset * 0.7, // y offset (up) - creates top-left to bottom-right
+      -diagonalOffset * 0.7, // y offset (down) - creates top-left to bottom-right
       -diagonalOffset * 0.7 // z offset (back)
     );
 
@@ -266,7 +266,7 @@ export class FileBrowser3D {
     // Calculate positions relative to selected card to keep it centered
     const selectedBasePosition = {
       x: this.currentIndex * 1.5 * 0.7,
-      y: this.currentIndex * 1.5 * 0.7,
+      y: -(this.currentIndex * 1.5) * 0.7,
       z: -(this.currentIndex * 1.5) * 0.7,
     };
 
@@ -276,7 +276,7 @@ export class FileBrowser3D {
       const scale = isSelected ? 1.15 : 1.0;
       const basePosition = {
         x: index * 1.5 * 0.7,
-        y: index * 1.5 * 0.7, // Positive Y for top-left to bottom-right
+        y: -(index * 1.5) * 0.7, // Negative Y for top-left to bottom-right
         z: -(index * 1.5) * 0.7,
       };
 
