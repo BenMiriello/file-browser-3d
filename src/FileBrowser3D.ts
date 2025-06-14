@@ -11,12 +11,22 @@ export interface FileItem {
 }
 
 export class FileBrowser3D {
-  // Positioning constants - CRITICAL: these must remain synchronized
+  // Positioning
   private static readonly CARD_SPACING = 1.5;
   private static readonly DIAGONAL_X_RATIO = -0.5;
   private static readonly DIAGONAL_Y_RATIO = -0.5;
   private static readonly DIAGONAL_Z_RATIO = 0.1;
   private static readonly ANIMATION_DURATION = 0.1;
+
+  // File Geometry
+  private static readonly folderWidth = 2.25;
+  private static readonly folderHeight = 1.75;
+  private static readonly tabHeight = 0.5;
+  private static readonly tabWidth = FileBrowser3D.folderWidth * (2 / 3);
+  private static readonly fileWidth = 2;
+  private static readonly fileHeight = 2.25;
+  private static readonly folderColor = 0x707070;
+  private static readonly fileColor = 0x888888;
 
   private scene: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
@@ -84,12 +94,12 @@ export class FileBrowser3D {
   }
 
   private setupLighting(): void {
-    // Ambient light for overall illumination
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+    // Ambient light for overall illumination (increased slightly)
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
     this.scene.add(ambientLight);
 
-    // Main directional light
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Main directional light (reduced intensity for more natural look)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
     directionalLight.position.set(20, 20, 20);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
@@ -102,33 +112,86 @@ export class FileBrowser3D {
     directionalLight.shadow.camera.bottom = -50;
     this.scene.add(directionalLight);
 
+    // Fill light from top-left for more natural lighting
+    const fillLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    fillLight.position.set(-15, 15, 10);
+    this.scene.add(fillLight);
+
     // Accent lights for depth
-    const accentLight1 = new THREE.PointLight(0x00ff88, 0.4, 100);
+    const accentLight1 = new THREE.PointLight(0x00ff88, 0.5, 100);
     accentLight1.position.set(-10, 5, 10);
     this.scene.add(accentLight1);
 
-    const accentLight2 = new THREE.PointLight(0x0088ff, 0.3, 100);
+    const accentLight2 = new THREE.PointLight(0x0088ff, 0.5, 100);
     accentLight2.position.set(10, 5, -10);
     this.scene.add(accentLight2);
   }
 
-  private createCard(fileItem: FileItem, index: number): THREE.Group {
-    const cardGroup = new THREE.Group();
+  private createFolderGeometry(): THREE.BufferGeometry {
+    // Create the main body and add tab as separate mesh in createCard
+    const mainBody = new THREE.BoxGeometry(
+      FileBrowser3D.folderWidth,
+      FileBrowser3D.folderHeight,
+      0.075
+    );
+    return mainBody;
+  }
 
-    // Card geometry - 50% smaller, file-shaped
-    const cardGeometry = new THREE.BoxGeometry(1.75, 2.25, 0.075);
+  private createFileGeometry(): THREE.BufferGeometry {
+    const mainBody = new THREE.BoxGeometry(
+      FileBrowser3D.fileWidth,
+      FileBrowser3D.fileHeight,
+      0.075
+    );
+    return mainBody;
+  }
 
-    // Material based on file type - medium grey for visibility
-    const isFolder = fileItem.type === 'folder';
-    const cardMaterial = new THREE.MeshPhysicalMaterial({
-      color: isFolder ? 0x888888 : 0x777777,
-      metalness: 0.1,
+  private createCardMaterial(isFolder: boolean): THREE.MeshPhysicalMaterial {
+    return new THREE.MeshPhysicalMaterial({
+      color: isFolder ? FileBrowser3D.folderColor : FileBrowser3D.fileColor,
+      metalness: 0.25,
       roughness: 0.3,
       clearcoat: 0.5,
       clearcoatRoughness: 0.1,
       transmission: 0,
       thickness: 0.5,
     });
+  }
+
+  private createFolderTab(): THREE.Mesh {
+    const tabGeometry = new THREE.BoxGeometry(
+      FileBrowser3D.tabWidth,
+      FileBrowser3D.tabHeight,
+      0.075
+    );
+
+    const tabMaterial = this.createCardMaterial(true);
+
+    const tabMesh = new THREE.Mesh(tabGeometry, tabMaterial);
+
+    // Position tab at top-left of main body
+    const tabOffsetY =
+      (FileBrowser3D.folderHeight + FileBrowser3D.tabHeight) / 2; // Position above main body
+    const tabOffsetX =
+      -(FileBrowser3D.folderWidth - FileBrowser3D.tabWidth) / 2; // Align to left edge
+    tabMesh.position.set(tabOffsetX, tabOffsetY, 0);
+
+    tabMesh.castShadow = true;
+    tabMesh.receiveShadow = true;
+
+    return tabMesh;
+  }
+
+  private createCard(fileItem: FileItem, index: number): THREE.Group {
+    const cardGroup = new THREE.Group();
+
+    // Card geometry based on type
+    const isFolder = fileItem.type === 'folder';
+    const cardGeometry = isFolder
+      ? this.createFolderGeometry()
+      : this.createFileGeometry(); // new THREE.BoxGeometry(1.75, 2.25, 0.075);
+
+    const cardMaterial = this.createCardMaterial(isFolder);
 
     const cardMesh = new THREE.Mesh(cardGeometry, cardMaterial);
     cardMesh.castShadow = true;
@@ -136,7 +199,12 @@ export class FileBrowser3D {
 
     cardGroup.add(cardMesh);
 
-    // Position cards in diagonal formation (top-left to bottom-right)
+    if (isFolder) {
+      const tabMesh = this.createFolderTab();
+      cardGroup.add(tabMesh);
+    }
+
+    // Position cards in a diagonal row (top-left to bottom-right)
     const diagonalOffset = index * FileBrowser3D.CARD_SPACING;
     cardGroup.position.set(
       diagonalOffset * FileBrowser3D.DIAGONAL_X_RATIO,
@@ -144,7 +212,7 @@ export class FileBrowser3D {
       -diagonalOffset * FileBrowser3D.DIAGONAL_Z_RATIO
     );
 
-    // Add physics body with no mass (kinematic) - smaller size
+    // Add physics body with no mass (kinematic)
     const cardShape = new CANNON.Box(new CANNON.Vec3(0.875, 1.125, 0.0375));
     const cardBody = new CANNON.Body({
       mass: 0, // Kinematic body - won't fall
