@@ -1,6 +1,9 @@
 import { FileItem } from './FileBrowser3D';
 
 export class FileSystemReader {
+  private static rootDirectoryHandle: any = null;
+  private static currentPath: string[] = [];
+
   /**
    * Read directory contents from the user's file system using File System Access API
    * @returns Promise resolving to array of FileItem objects
@@ -26,11 +29,16 @@ export class FileSystemReader {
    */
   private static async readWithFileSystemAPI(): Promise<FileItem[]> {
     try {
-      // Request directory access - let user choose any directory
-      const directoryHandle = await (window as any).showDirectoryPicker({
-        id: 'file-browser',
-        mode: 'read',
-      });
+      // Request directory access - let user choose any directory (only if we don't have one)
+      if (!this.rootDirectoryHandle) {
+        this.rootDirectoryHandle = await (window as any).showDirectoryPicker({
+          id: 'file-browser',
+          mode: 'read',
+        });
+        this.currentPath = []; // Reset to root
+      }
+
+      const directoryHandle = this.rootDirectoryHandle;
 
       const items: FileItem[] = [];
 
@@ -97,6 +105,11 @@ export class FileSystemReader {
 
         // First, find the common root path
         const firstFile = files[0];
+        if (!firstFile) {
+          resolve([]);
+          document.body.removeChild(input);
+          return;
+        }
         const basePath = firstFile.webkitRelativePath.split('/')[0];
 
         // Process all files and extract immediate children of the selected directory
@@ -108,7 +121,7 @@ export class FileSystemReader {
           if (pathParts.length >= 2) {
             const immediateChild = pathParts[1];
 
-            if (!seenNames.has(immediateChild)) {
+            if (immediateChild && !seenNames.has(immediateChild)) {
               seenNames.add(immediateChild);
 
               // Check if this is a directory by seeing if there are more path parts
@@ -120,17 +133,22 @@ export class FileSystemReader {
                   )
                 );
 
-              items.push({
+              const item: FileItem = {
                 name: immediateChild,
                 type: isDirectory ? 'folder' : 'file',
                 path: `${basePath}/${immediateChild}`,
-                size: isDirectory ? undefined : file.size,
-              });
+              };
+
+              if (!isDirectory) {
+                item.size = file.size;
+              }
+
+              items.push(item);
             }
           } else if (pathParts.length === 1) {
             // Root level file
             const fileName = pathParts[0];
-            if (!seenNames.has(fileName)) {
+            if (fileName && !seenNames.has(fileName)) {
               seenNames.add(fileName);
               items.push({
                 name: fileName,
@@ -170,6 +188,16 @@ export class FileSystemReader {
   }
 
   /**
+   * Check if subdirectory navigation is supported
+   */
+  static isSubdirectoryNavigationSupported(): boolean {
+    // Check if we have the modern File System Access API and a root handle
+    const hasModernAPI = 'showDirectoryPicker' in window;
+    const hasRootHandle = !!this.rootDirectoryHandle;
+    return hasModernAPI && hasRootHandle;
+  }
+
+  /**
    * Check if any file system access is supported
    */
   static isFileSystemAPISupported(): boolean {
@@ -179,6 +207,104 @@ export class FileSystemReader {
       'webkitdirectory' in document.createElement('input');
 
     return hasModernAPI || hasWebkitDirectory;
+  }
+
+  /**
+   * Read a specific subdirectory by name
+   */
+  static async readSubdirectory(folderName: string): Promise<FileItem[]> {
+    if (!('showDirectoryPicker' in window)) {
+      throw new Error(
+        `Subdirectory navigation requires File System Access API ` +
+          `(not available in this browser)`
+      );
+    }
+
+    if (!this.rootDirectoryHandle) {
+      throw new Error(
+        'No root directory handle available - please select a directory first'
+      );
+    }
+
+    try {
+      // Navigate to the current directory handle
+      let currentHandle = this.rootDirectoryHandle;
+
+      // Navigate through the current path to get to current directory
+      for (const pathSegment of this.currentPath) {
+        currentHandle = await currentHandle.getDirectoryHandle(pathSegment);
+      }
+
+      // Get the subdirectory handle
+      const subdirHandle = await currentHandle.getDirectoryHandle(folderName);
+
+      // Read the subdirectory contents
+      const items: FileItem[] = [];
+
+      for await (const [name, handle] of subdirHandle.entries()) {
+        // Skip hidden files/folders (starting with .)
+        if (name.startsWith('.')) continue;
+
+        const item: FileItem = {
+          name: name,
+          type: handle.kind === 'directory' ? 'folder' : 'file',
+          path: `${this.currentPath.join('/')}/${folderName}/${name}`,
+        };
+
+        // For files, try to get size if available
+        if (handle.kind === 'file') {
+          try {
+            const file = await handle.getFile();
+            item.size = file.size;
+          } catch {
+            // Size not available, continue without it
+          }
+        }
+
+        items.push(item);
+      }
+
+      // Sort: folders first, then files, both alphabetically
+      return items.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'folder' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name, undefined, { numeric: true });
+      });
+    } catch (error) {
+      console.error('Error reading subdirectory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Navigate into a subdirectory (updates current path)
+   */
+  static navigateInto(folderName: string): void {
+    this.currentPath.push(folderName);
+  }
+
+  /**
+   * Navigate back to parent directory
+   */
+  static navigateBack(): void {
+    this.currentPath.pop();
+  }
+
+  /**
+   * Get current path as string
+   */
+  static getCurrentPath(): string {
+    return this.currentPath.length === 0
+      ? '/'
+      : '/' + this.currentPath.join('/');
+  }
+
+  /**
+   * Reset to root directory
+   */
+  static resetToRoot(): void {
+    this.currentPath = [];
   }
 
   /**

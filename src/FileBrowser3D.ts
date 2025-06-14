@@ -5,7 +5,7 @@ import { TextRenderer } from './TextRenderer';
 import { SceneSetup } from './SceneSetup';
 import { ZoomControls } from './ZoomControls';
 import { InputHandlers } from './InputHandlers';
-import { FileSystemReader } from './FileSystemReader';
+import { ServerFileSystemReader } from './ServerFileSystemReader';
 import { AnimationManager } from './animations/AnimationManager';
 import { TransitionContext } from './animations/ITransition';
 
@@ -36,6 +36,7 @@ export class FileBrowser3D {
   private animationManager: AnimationManager;
   private currentDirectory: FileItem[] = [];
   private navigationStack: FileItem[][] = [];
+  private isUsingRealFilesystem = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
@@ -85,31 +86,34 @@ export class FileBrowser3D {
   }
 
   private async loadFileSystemData(): Promise<FileItem[]> {
-    // Always start with fallback data - file system access requires user interaction
-    const data = this.createFallbackData();
-    this.currentDirectory = data;
-    return data;
-  }
-
-  private async loadRealFileSystem(): Promise<void> {
     try {
-      this.showLoadingState();
-      const files = await FileSystemReader.readDirectory();
+      console.log('Loading filesystem data...');
+      // Check if server filesystem is available
+      const isServerAvailable = await ServerFileSystemReader.isAvailable();
 
-      if (files.length > 0) {
-        // Clear existing cards
-        this.cards.forEach(card => this.scene.remove(card));
-        this.cards = [];
-
-        // Update current directory and create new cards
-        this.currentDirectory = files;
-        this.createCardsFromData(files);
+      if (isServerAvailable) {
+        console.log('Server filesystem is available, loading server data...');
+        // Load from server filesystem (home directory)
+        await ServerFileSystemReader.resetToHome();
+        const serverData = await ServerFileSystemReader.readDirectory();
+        console.log('Server data loaded:', serverData);
+        this.currentDirectory = serverData;
+        this.isUsingRealFilesystem = true;
+        return serverData;
+      } else {
+        console.log('Server filesystem not available, using fallback data...');
+        // Fallback to mock data if server is not available
+        const fallbackData = this.createFallbackData();
+        this.currentDirectory = fallbackData;
+        this.isUsingRealFilesystem = false;
+        return fallbackData;
       }
     } catch (error) {
-      console.error('Failed to load real file system:', error);
-      this.showErrorState('Failed to access file system');
-    } finally {
-      this.hideLoadingState();
+      console.error('Failed to load server filesystem, using fallback:', error);
+      const fallbackData = this.createFallbackData();
+      this.currentDirectory = fallbackData;
+      this.isUsingRealFilesystem = false;
+      return fallbackData;
     }
   }
 
@@ -280,8 +284,7 @@ export class FileBrowser3D {
       });
       this.zoomControls.createZoomControl();
 
-      // Create file system button
-      this.createFileSystemButton();
+      // File system button no longer needed - server filesystem loads automatically
 
       this.setupEventListeners();
 
@@ -291,149 +294,23 @@ export class FileBrowser3D {
       this.animate();
     } catch (error) {
       console.error('Failed to initialize FileBrowser3D:', error);
-      this.showErrorState('Failed to load file system');
-    }
-  }
-
-  private getHomePath(): string {
-    // For mobile devices, just show a generic message
-    const isMobile =
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        window.navigator.userAgent
+      // Show error popup instead of old error state
+      this.showErrorPopup(
+        'Initialization Error',
+        `
+        <strong>Failed to initialize 3D File Browser</strong><br><br>
+        <strong>Error:</strong> ${error instanceof Error ? error.message : 'Unknown error'}<br><br>
+        Please refresh the page and try again.
+      `
       );
-
-    if (isMobile) {
-      return 'your files';
-    }
-
-    // For desktop, try to detect path
-    const isWindows =
-      window.navigator.platform.toUpperCase().indexOf('WIN') >= 0;
-    const isMac =
-      window.navigator.userAgent.includes('Mac') ||
-      window.navigator.platform.includes('Mac');
-
-    let username = 'user';
-    const currentLocation = window.location.hostname;
-    if (currentLocation === 'localhost' || currentLocation === '127.0.0.1') {
-      // Development environment - use known username
-      username = 'benmiriello';
-    }
-
-    if (isMac) {
-      return `/Users/${username}`;
-    } else if (isWindows) {
-      return `C:\\Users\\${username}`;
-    } else {
-      // Linux/Unix
-      return `/home/${username}`;
     }
   }
 
-  private createFileSystemButton(): void {
-    // Only show button if File System Access API is supported
-    if (!FileSystemReader.isFileSystemAPISupported()) {
-      return;
-    }
+  // getHomePath method removed - server provides home directory automatically
 
-    const homePath = this.getHomePath();
+  // createFileSystemButton method removed - server filesystem loads automatically
 
-    const button = document.createElement('button');
-    button.textContent = FileSystemReader.isFileSystemAPISupported()
-      ? `Browse ${homePath}`
-      : `File System Not Supported`;
-    Object.assign(button.style, {
-      position: 'fixed',
-      top: '40px',
-      left: '40px',
-      padding: '12px 20px',
-      backgroundColor: FileSystemReader.isFileSystemAPISupported()
-        ? '#333333'
-        : '#666666',
-      color: 'white',
-      border: 'none',
-      borderRadius: '6px',
-      fontSize: '14px',
-      fontFamily: 'Arial, sans-serif',
-      cursor: FileSystemReader.isFileSystemAPISupported()
-        ? 'pointer'
-        : 'not-allowed',
-      zIndex: '1000',
-      transition: 'background-color 0.2s ease',
-      whiteSpace: 'nowrap',
-    });
-
-    // Hover effect only if supported
-    if (FileSystemReader.isFileSystemAPISupported()) {
-      button.addEventListener('mouseenter', () => {
-        button.style.backgroundColor = '#555555';
-      });
-      button.addEventListener('mouseleave', () => {
-        button.style.backgroundColor = '#333333';
-      });
-
-      // Click handler
-      button.addEventListener('click', () => {
-        this.loadRealFileSystem();
-      });
-    }
-
-    document.body.appendChild(button);
-  }
-
-  private showLoadingState(): void {
-    // Create simple loading indicator
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'file-browser-loading';
-    loadingDiv.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-family: Arial, sans-serif;
-      font-size: 18px;
-      z-index: 1000;
-    `;
-    loadingDiv.textContent = 'Loading files...';
-    document.body.appendChild(loadingDiv);
-  }
-
-  private hideLoadingState(): void {
-    const loadingDiv = document.getElementById('file-browser-loading');
-    if (loadingDiv) {
-      document.body.removeChild(loadingDiv);
-    }
-  }
-
-  private showErrorState(message: string): void {
-    this.hideLoadingState();
-
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: #ff6b6b;
-      font-family: Arial, sans-serif;
-      font-size: 18px;
-      text-align: center;
-      z-index: 1000;
-    `;
-    errorDiv.innerHTML = `
-      <div>${message}</div>
-      <div style="font-size: 14px; margin-top: 10px;">Using fallback data instead</div>
-    `;
-    document.body.appendChild(errorDiv);
-
-    // Remove error message after 3 seconds
-    window.setTimeout(() => {
-      if (errorDiv.parentNode) {
-        document.body.removeChild(errorDiv);
-      }
-    }, 3000);
-  }
+  // Loading and error state methods removed - using popup system instead
 
   private async onCardClick(cardIndex: number): Promise<void> {
     if (this.animationManager.isAnimating()) return;
@@ -450,8 +327,44 @@ export class FileBrowser3D {
     // Handle regular folder navigation
     if (selectedItem.type !== 'folder') return;
 
-    // For now, create mock folder contents
-    const folderContents = this.createMockFolderContents(selectedItem.name);
+    // Try to get real folder contents if we're using real filesystem
+    let folderContents: FileItem[];
+    if (this.isUsingRealFilesystem) {
+      try {
+        // Try to read the real subdirectory from server
+        const realContents = await ServerFileSystemReader.readSubdirectory(
+          selectedItem.name
+        );
+
+        // Add back navigation to the beginning
+        folderContents = [
+          { name: '..', type: 'folder', path: '../', children: [] },
+          ...realContents,
+        ];
+
+        // Update ServerFileSystemReader's current path
+        ServerFileSystemReader.navigateInto(selectedItem.name);
+      } catch (error) {
+        console.error('Failed to read server subdirectory:', error);
+        // Show error popup instead of fake data
+        this.showErrorPopup(
+          'Server Folder Reading Error',
+          `
+          <strong>Failed to read folder: ${selectedItem.name}</strong><br><br>
+          <strong>Error:</strong> ${ServerFileSystemReader.getErrorMessage(error)}<br><br>
+          <strong>Details:</strong> Server filesystem reading failed. This could be due to:<br>
+          • Permission issues on server<br>
+          • Folder doesn't exist<br>
+          • Server connection problems<br>
+          • Path access restrictions<br><br>
+          Try going back and selecting a different folder.
+        `
+        );
+        return; // Don't navigate, just show error
+      }
+    } else {
+      folderContents = this.createMockFolderContents(selectedItem.name);
+    }
 
     await this.navigateToFolder(selectedItem, folderContents, cardIndex);
   }
@@ -600,8 +513,135 @@ export class FileBrowser3D {
 
     const previousDirectory = this.navigationStack.pop()!;
 
+    // Update ServerFileSystemReader path if using real filesystem
+    if (this.isUsingRealFilesystem) {
+      ServerFileSystemReader.navigateBack();
+    }
+
     // Simple transition back (could use different animation)
     this.createCardsFromData(previousDirectory);
     this.currentDirectory = previousDirectory;
+  }
+
+  private showErrorPopup(title: string, content: string): void {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById('file-browser-error-popup');
+    if (existingPopup) {
+      document.body.removeChild(existingPopup);
+    }
+
+    // Create popup overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'file-browser-error-popup';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+    `;
+
+    // Create popup content
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+      background: #2a2a2a;
+      color: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 90%;
+      max-height: 80%;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      position: relative;
+      border: 1px solid #444;
+    `;
+
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.innerHTML = '×';
+    closeButton.style.cssText = `
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: background-color 0.2s ease;
+    `;
+
+    closeButton.addEventListener('mouseenter', () => {
+      closeButton.style.backgroundColor = '#444';
+    });
+    closeButton.addEventListener('mouseleave', () => {
+      closeButton.style.backgroundColor = 'transparent';
+    });
+
+    // Create title
+    const titleElement = document.createElement('h2');
+    titleElement.textContent = title;
+    titleElement.style.cssText = `
+      margin: 0 32px 16px 0;
+      color: #ff6b6b;
+      font-size: 20px;
+      font-weight: bold;
+    `;
+
+    // Create content
+    const contentElement = document.createElement('div');
+    contentElement.innerHTML = content;
+    contentElement.style.cssText = `
+      line-height: 1.6;
+      font-size: 14px;
+      color: #e0e0e0;
+    `;
+
+    // Close popup function
+    const closePopup = () => {
+      if (overlay.parentNode) {
+        document.body.removeChild(overlay);
+      }
+    };
+
+    // Event listeners
+    closeButton.addEventListener('click', closePopup);
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) {
+        closePopup();
+      }
+    });
+
+    // Keyboard escape
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePopup();
+        document.removeEventListener('keydown', handleKeydown);
+      }
+    };
+    document.addEventListener('keydown', handleKeydown);
+
+    // Assemble popup
+    popup.appendChild(closeButton);
+    popup.appendChild(titleElement);
+    popup.appendChild(contentElement);
+    overlay.appendChild(popup);
+
+    // Add to page
+    document.body.appendChild(overlay);
   }
 }

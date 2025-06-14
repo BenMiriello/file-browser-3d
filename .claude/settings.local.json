@@ -20,7 +20,11 @@
       "Bash(ls:*)",
       "Bash(rg:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(npm run commit:*)",
+      "Bash(timeout 30s npm run screenshot:claude)",
+      "Bash(grep:*)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }

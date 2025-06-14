@@ -7,7 +7,7 @@ async function takeScreenshot() {
   
   try {
     // Navigate to the local development server
-    await page.goto('http://localhost:3001');
+    await page.goto('http://localhost:3000');
     
     // Wait for the 3D scene to initialize
     await page.waitForSelector('#canvas');

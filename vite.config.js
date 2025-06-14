@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
+import { filesystemApiPlugin } from './server/filesystem-api.js';
 
 export default defineConfig({
+  plugins: [filesystemApiPlugin()],
   build: {
     lib: {
       entry: 'src/index.ts',
