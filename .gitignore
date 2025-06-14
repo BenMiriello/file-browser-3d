@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+node_modules
 
 # Screenshots (development screenshots are in ../notes/chat/screenshots/)
 screenshots/

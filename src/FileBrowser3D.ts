@@ -151,9 +151,9 @@ export class FileBrowser3D {
     // Position cards in diagonal formation (top-left to bottom-right)
     const diagonalOffset = index * 1.5;
     cardGroup.position.set(
-      diagonalOffset * 0.7, // x offset (right)
-      -diagonalOffset * 0.7, // y offset (down) - creates top-left to bottom-right
-      -diagonalOffset * 0.7 // z offset (back)
+      diagonalOffset * -0.5, // x offset (slight more horizontal)
+      -diagonalOffset * -0.5, // y offset (slight less vertical drop)
+      -diagonalOffset * 0.1 // z offset (less depth to separate cards)
     );
 
     // Add physics body with no mass (kinematic) - smaller size
@@ -266,9 +266,9 @@ export class FileBrowser3D {
 
     // Calculate positions relative to selected card to keep it centered
     const selectedBasePosition = {
-      x: this.currentIndex * 1.5 * 0.7,
-      y: -(this.currentIndex * 1.5) * 0.7,
-      z: -(this.currentIndex * 1.5) * 0.7,
+      x: this.currentIndex * 1.5 * -0.5,
+      y: -(this.currentIndex * 1.5) * -0.5,
+      z: -(this.currentIndex * 1.5) * 0.1,
     };
 
     // Animate all cards with smooth easing
@@ -276,9 +276,9 @@ export class FileBrowser3D {
       const isSelected = index === this.currentIndex;
       const scale = isSelected ? 1.15 : 1.0;
       const basePosition = {
-        x: index * 1.5 * 0.7,
-        y: -(index * 1.5) * 0.7, // Negative Y for top-left to bottom-right
-        z: -(index * 1.5) * 0.7,
+        x: index * 1.5 * -0.5,
+        y: -(index * 1.5) * -0.5, // Negative Y for top-left to bottom-right
+        z: -(index * 1.5) * 0.1,
       };
 
       // Position relative to selected card (keeps selected card centered)
@@ -294,12 +294,12 @@ export class FileBrowser3D {
         centeredPosition.z += 0.3;
       }
 
-      // Smooth animations with responsive easing
+      // Smooth animations with responsive easing - 3x faster
       gsap.to(card.scale, {
         x: scale,
         y: scale,
         z: scale,
-        duration: 0.8,
+        duration: 0.2,
         ease: 'power2.out',
       });
 
@@ -307,7 +307,7 @@ export class FileBrowser3D {
         x: centeredPosition.x,
         y: centeredPosition.y,
         z: centeredPosition.z,
-        duration: 0.8,
+        duration: 0.27,
         ease: 'power2.out',
       });
 
@@ -317,7 +317,7 @@ export class FileBrowser3D {
           x: centeredPosition.x,
           y: centeredPosition.y,
           z: centeredPosition.z,
-          duration: 0.8,
+          duration: 0.27,
           ease: 'power2.out',
           onComplete: () => {
             if (index === this.currentIndex) {
