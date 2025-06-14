@@ -38,6 +38,9 @@ export class FileBrowser3D {
   private zoomControl: HTMLElement | null = null;
   private zoomSlider: HTMLElement | null = null;
   private isDragging = false;
+  private currentZoom = 1.1;
+  private readonly MIN_ZOOM = 0.7;
+  private readonly MAX_ZOOM = 1.5;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
@@ -237,13 +240,20 @@ export class FileBrowser3D {
   }
 
   private setupEventListeners(): void {
-    // Mouse wheel for navigation
+    // Mouse wheel for navigation and trackpad pinch
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      if (this.isAnimating) return;
 
-      const delta = Math.sign(event.deltaY);
-      this.navigateCards(delta);
+      if (event.ctrlKey) {
+        // Trackpad pinch gesture
+        const zoomDelta = -event.deltaY * 0.01;
+        this.setZoom(this.currentZoom + zoomDelta);
+      } else {
+        // Regular wheel scrolling for navigation
+        if (this.isAnimating) return;
+        const delta = Math.sign(event.deltaY);
+        this.navigateCards(delta);
+      }
     });
 
     // Touch events for mobile
@@ -282,6 +292,55 @@ export class FileBrowser3D {
           // Horizontal swipe
           const delta = deltaX > 0 ? -1 : 1;
           this.navigateCards(delta);
+        }
+      }
+    });
+
+    // Keyboard controls for zoom
+    window.addEventListener('keydown', event => {
+      if (event.key === '=' || event.key === '+') {
+        event.preventDefault();
+        this.setZoom(this.currentZoom + 0.1);
+      } else if (event.key === '-') {
+        event.preventDefault();
+        this.setZoom(this.currentZoom - 0.1);
+      } else if (event.key === '0') {
+        event.preventDefault();
+        this.setZoom(1.0); // Reset to default zoom
+      }
+    });
+
+    // Pinch-to-zoom for mobile
+    let initialDistance = 0;
+    let initialZoom = 1.0;
+
+    this.canvas.addEventListener('touchstart', event => {
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+        if (touch1 && touch2) {
+          initialDistance = Math.hypot(
+            touch1.clientX - touch2.clientX,
+            touch1.clientY - touch2.clientY
+          );
+          initialZoom = this.currentZoom;
+        }
+      }
+    });
+
+    this.canvas.addEventListener('touchmove', event => {
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+        if (touch1 && touch2) {
+          const currentDistance = Math.hypot(
+            touch1.clientX - touch2.clientX,
+            touch1.clientY - touch2.clientY
+          );
+          const scale = currentDistance / initialDistance;
+          this.setZoom(initialZoom * scale);
         }
       }
     });
@@ -378,17 +437,31 @@ export class FileBrowser3D {
   }
 
   private createZoomControl(): void {
-    // Create zoom control container
+    // Create zoom control container with larger clickable area
     this.zoomControl = document.createElement('div');
     Object.assign(this.zoomControl.style, {
       position: 'fixed',
-      bottom: '40px',
+      top: '40px',
       right: '40px',
-      width: '2px',
+      width: '24px', // Wider clickable area (16px slider diameter * 1.5 = 24px)
       height: '160px',
-      backgroundColor: '#999999',
       zIndex: '1000',
+      cursor: 'pointer',
     });
+
+    // Create visible track (thin line)
+    const track = document.createElement('div');
+    Object.assign(track.style, {
+      position: 'absolute',
+      left: '9px', // Center the 2px line in 20px container
+      top: '0',
+      width: '2px',
+      height: '100%',
+      backgroundColor: '#999999',
+      pointerEvents: 'none',
+    });
+
+    this.zoomControl.appendChild(track);
 
     // Create zoom slider
     this.zoomSlider = document.createElement('div');
@@ -398,10 +471,11 @@ export class FileBrowser3D {
       height: '12px',
       backgroundColor: '#999999',
       borderRadius: '50%',
-      left: '-5px',
+      left: '4px', // Center in 20px container (10px - 6px = 4px)
       bottom: '50%',
       cursor: 'pointer',
       transition: 'all 0.1s ease',
+      pointerEvents: 'none', // Let container handle clicks
     });
 
     this.zoomControl.appendChild(this.zoomSlider);
@@ -409,6 +483,9 @@ export class FileBrowser3D {
 
     // Add drag functionality
     this.setupZoomDrag();
+
+    // Initialize slider position
+    this.updateSliderPosition();
   }
 
   private setupZoomDrag(): void {
@@ -422,9 +499,25 @@ export class FileBrowser3D {
       Object.assign(this.zoomSlider!.style, {
         width: '16px',
         height: '16px',
-        left: '-7px',
+        left: '2px', // Adjust for larger size in 20px container
         backgroundColor: '#cccccc',
       });
+
+      // If clicked directly on track (not during drag), jump to that position
+      if (e.type === 'mousedown' || e.type === 'touchstart') {
+        const rect = this.zoomControl!.getBoundingClientRect();
+        const clientY = 'touches' in e ? e.touches[0]?.clientY : e.clientY;
+        if (clientY !== undefined) {
+          const relativeY = clientY - rect.top;
+          const percentage = Math.max(
+            0,
+            Math.min(1, 1 - relativeY / rect.height)
+          );
+          const newScale =
+            this.MIN_ZOOM + percentage * (this.MAX_ZOOM - this.MIN_ZOOM);
+          this.setZoom(newScale);
+        }
+      }
 
       document.addEventListener('mousemove', drag);
       document.addEventListener('mouseup', endDrag);
@@ -443,9 +536,10 @@ export class FileBrowser3D {
 
       this.zoomSlider.style.bottom = `${percentage * 100}%`;
 
-      // Update scale (0.5x to 2x range)
-      const newScale = 0.5 + percentage * 1.5;
-      this.updateScale(newScale);
+      // Update scale with limits and finer increments
+      const newScale =
+        this.MIN_ZOOM + percentage * (this.MAX_ZOOM - this.MIN_ZOOM);
+      this.setZoom(newScale);
     };
 
     const endDrag = () => {
@@ -455,7 +549,7 @@ export class FileBrowser3D {
       Object.assign(this.zoomSlider!.style, {
         width: '12px',
         height: '12px',
-        left: '-5px',
+        left: '4px', // Center in 20px container
         backgroundColor: '#999999',
       });
 
@@ -465,27 +559,53 @@ export class FileBrowser3D {
       document.removeEventListener('touchend', endDrag);
     };
 
-    this.zoomSlider.addEventListener('mousedown', startDrag);
-    this.zoomSlider.addEventListener('touchstart', startDrag);
+    this.zoomControl.addEventListener('mousedown', startDrag);
+    this.zoomControl.addEventListener('touchstart', startDrag);
   }
 
-  private updateScale(newScale: number): void {
-    // Just scale the entire scene instead of rebuilding
-    this.scene.scale.setScalar(newScale);
+  private setZoom(targetZoom: number): void {
+    // Clamp zoom to limits
+    targetZoom = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, targetZoom));
+
+    // Snap to 1.0 if close (within 0.05)
+    if (Math.abs(targetZoom - 1.0) < 0.05) {
+      targetZoom = 1.0;
+    }
+
+    // Smooth zoom transition
+    gsap.to(this, {
+      currentZoom: targetZoom,
+      duration: 0.15,
+      ease: 'power2.out',
+      onUpdate: () => this.updateScale(),
+    });
+  }
+
+  private updateScale(): void {
+    // Apply current zoom to scene
+    this.scene.scale.setScalar(this.currentZoom);
 
     // Update camera frustum to maintain proper view
     const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 10 / newScale; // Inverse scale for frustum
+    const frustumSize = 10 / this.currentZoom;
 
     this.camera.left = (-frustumSize * aspect) / 2;
     this.camera.right = (frustumSize * aspect) / 2;
     this.camera.top = frustumSize / 2;
     this.camera.bottom = -frustumSize / 2;
     this.camera.updateProjectionMatrix();
+
+    this.updateSliderPosition();
+  }
+
+  private updateSliderPosition(): void {
+    if (!this.zoomSlider) return;
+    const percentage =
+      (this.currentZoom - this.MIN_ZOOM) / (this.MAX_ZOOM - this.MIN_ZOOM);
+    this.zoomSlider.style.bottom = `${percentage * 100}%`;
   }
 
   public init(): void {
-    // Create test cards
     const testData = this.createTestData();
     testData.forEach((item, index) => {
       const card = this.createCard(item, index);
@@ -493,9 +613,9 @@ export class FileBrowser3D {
       this.scene.add(card);
     });
 
-    // Initial card positioning handled by smooth system
     this.createZoomControl();
     this.setupEventListeners();
+    this.updateScale();
     this.animate();
   }
 }
