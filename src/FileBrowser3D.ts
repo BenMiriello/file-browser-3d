@@ -11,6 +11,12 @@ export interface FileItem {
 }
 
 export class FileBrowser3D {
+  // Positioning constants - CRITICAL: these must remain synchronized
+  private static readonly CARD_SPACING = 1.5;
+  private static readonly DIAGONAL_X_RATIO = -0.5;
+  private static readonly DIAGONAL_Y_RATIO = -0.5;
+  private static readonly DIAGONAL_Z_RATIO = 0.1;
+
   private scene: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
   private renderer!: THREE.WebGLRenderer;
@@ -149,11 +155,11 @@ export class FileBrowser3D {
     cardGroup.add(iconMesh);
 
     // Position cards in diagonal formation (top-left to bottom-right)
-    const diagonalOffset = index * 1.5;
+    const diagonalOffset = index * FileBrowser3D.CARD_SPACING;
     cardGroup.position.set(
-      diagonalOffset * -0.5, // x offset (slight more horizontal)
-      -diagonalOffset * -0.5, // y offset (slight less vertical drop)
-      -diagonalOffset * 0.1 // z offset (less depth to separate cards)
+      diagonalOffset * FileBrowser3D.DIAGONAL_X_RATIO,
+      -diagonalOffset * FileBrowser3D.DIAGONAL_Y_RATIO,
+      -diagonalOffset * FileBrowser3D.DIAGONAL_Z_RATIO
     );
 
     // Add physics body with no mass (kinematic) - smaller size
@@ -266,9 +272,16 @@ export class FileBrowser3D {
 
     // Calculate positions relative to selected card to keep it centered
     const selectedBasePosition = {
-      x: this.currentIndex * 1.5 * -0.5,
-      y: -(this.currentIndex * 1.5) * -0.5,
-      z: -(this.currentIndex * 1.5) * 0.1,
+      x:
+        this.currentIndex *
+        FileBrowser3D.CARD_SPACING *
+        FileBrowser3D.DIAGONAL_X_RATIO,
+      y:
+        -(this.currentIndex * FileBrowser3D.CARD_SPACING) *
+        FileBrowser3D.DIAGONAL_Y_RATIO,
+      z:
+        -(this.currentIndex * FileBrowser3D.CARD_SPACING) *
+        FileBrowser3D.DIAGONAL_Z_RATIO,
     };
 
     // Animate all cards with smooth easing
@@ -276,9 +289,13 @@ export class FileBrowser3D {
       const isSelected = index === this.currentIndex;
       const scale = isSelected ? 1.15 : 1.0;
       const basePosition = {
-        x: index * 1.5 * -0.5,
-        y: -(index * 1.5) * -0.5, // Negative Y for top-left to bottom-right
-        z: -(index * 1.5) * 0.1,
+        x: index * FileBrowser3D.CARD_SPACING * FileBrowser3D.DIAGONAL_X_RATIO,
+        y:
+          -(index * FileBrowser3D.CARD_SPACING) *
+          FileBrowser3D.DIAGONAL_Y_RATIO,
+        z:
+          -(index * FileBrowser3D.CARD_SPACING) *
+          FileBrowser3D.DIAGONAL_Z_RATIO,
       };
 
       // Position relative to selected card (keeps selected card centered)
