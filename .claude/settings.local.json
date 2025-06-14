@@ -17,7 +17,8 @@
       "Bash(npx husky init:*)",
       "Bash(mkdir:*)",
       "Bash(npm run screenshot:claude:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }
