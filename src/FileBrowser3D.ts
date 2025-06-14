@@ -251,49 +251,125 @@ export class FileBrowser3D {
       } else {
         // Regular wheel scrolling for navigation
         if (this.isAnimating) return;
-        const delta = Math.sign(event.deltaY);
-        this.navigateCards(delta);
+
+        // Support both vertical and horizontal scrolling
+        const verticalDelta = -Math.sign(event.deltaY); // Negative so down-scroll moves forward
+        const horizontalDelta = -Math.sign(event.deltaX); // Negative so left-scroll moves forward
+
+        // Use whichever direction has movement
+        const delta =
+          Math.abs(event.deltaX) > Math.abs(event.deltaY)
+            ? horizontalDelta
+            : verticalDelta;
+
+        if (delta !== 0) {
+          this.navigateCards(delta);
+        }
       }
     });
 
-    // Touch events for mobile
+    // Touch events for mobile - continuous drag navigation
     let touchStartX = 0;
     let touchStartY = 0;
+    let isDragging = false;
+    let startScrollPosition = 0;
+    let lastTouchTime = 0;
+    let lastTouchPosition = 0;
+    let velocity = 0;
 
     this.canvas.addEventListener('touchstart', event => {
       event.preventDefault();
       const touch = event.touches[0];
       if (!touch) return;
+
+      // Cancel any running snap animation
+      gsap.killTweensOf(this);
+      this.isAnimating = false;
+
       touchStartX = touch.clientX;
       touchStartY = touch.clientY;
+      isDragging = true;
+      startScrollPosition = this.scrollPosition;
+      lastTouchTime = Date.now();
+      lastTouchPosition = this.scrollPosition;
+      velocity = 0;
     });
 
     this.canvas.addEventListener('touchmove', event => {
       event.preventDefault();
+      if (!isDragging) return;
+
+      const touch = event.touches[0];
+      if (!touch) return;
+
+      // Calculate total drag distance from start
+      const totalDeltaX = touch.clientX - touchStartX;
+      const totalDeltaY = touch.clientY - touchStartY;
+
+      // Use true diagonal distance for 1:1 tracking
+      const diagonalDistance = Math.hypot(totalDeltaX, totalDeltaY);
+
+      // Determine direction: positive if primarily right/down, negative if left/up
+      const primaryDelta =
+        Math.abs(totalDeltaX) > Math.abs(totalDeltaY)
+          ? totalDeltaX
+          : totalDeltaY;
+      const direction = Math.sign(primaryDelta);
+
+      // Convert drag distance to scroll position (100px = 1 card position)
+      // Positive drag (right/down) = forward, negative drag (left/up) = backward
+      const scrollDelta = (diagonalDistance * direction) / 100;
+
+      // Calculate new scroll position relative to start
+      const newScrollPosition = Math.max(
+        0,
+        Math.min(this.cards.length - 1, startScrollPosition + scrollDelta)
+      );
+
+      // Update scroll position in real-time (skip animations during drag)
+      this.scrollPosition = newScrollPosition;
+      this.updateCardPositionsImmediate();
+
+      // Calculate velocity for momentum
+      const currentTime = Date.now();
+      const timeDelta = currentTime - lastTouchTime;
+      if (timeDelta > 0) {
+        const positionDelta = newScrollPosition - lastTouchPosition;
+        velocity = positionDelta / timeDelta; // positions per millisecond
+        lastTouchTime = currentTime;
+        lastTouchPosition = newScrollPosition;
+      }
     });
 
     this.canvas.addEventListener('touchend', event => {
       event.preventDefault();
-      if (event.changedTouches.length === 0) return;
+      isDragging = false;
 
-      const touch = event.changedTouches[0];
-      if (!touch) return;
-      const deltaX = touch.clientX - touchStartX;
-      const deltaY = touch.clientY - touchStartY;
+      // Calculate momentum-based final position
+      const momentumDistance = velocity * 300; // Momentum duration in ms
+      const targetPosition = this.scrollPosition + momentumDistance;
 
-      // Determine swipe direction
-      const threshold = 50;
-      if (Math.abs(deltaX) > threshold || Math.abs(deltaY) > threshold) {
-        if (Math.abs(deltaY) > Math.abs(deltaX)) {
-          // Vertical swipe
-          const delta = deltaY > 0 ? -1 : 1;
-          this.navigateCards(delta);
-        } else {
-          // Horizontal swipe
-          const delta = deltaX > 0 ? -1 : 1;
-          this.navigateCards(delta);
-        }
-      }
+      // Clamp to valid range and snap to nearest whole position
+      const clampedTarget = Math.max(
+        0,
+        Math.min(this.cards.length - 1, targetPosition)
+      );
+      const snappedPosition = Math.round(clampedTarget);
+
+      // Animate to final position with momentum
+      const distance = Math.abs(snappedPosition - this.scrollPosition);
+      const duration = Math.max(0.1, Math.min(1.0, distance * 0.2 + 0.1)); // Variable duration based on distance
+
+      this.isAnimating = true;
+      gsap.to(this, {
+        scrollPosition: snappedPosition,
+        duration: duration,
+        ease: 'power2.out',
+        onUpdate: () => this.updateCardPositions(),
+        onComplete: () => {
+          this.isAnimating = false;
+        },
+      });
     });
 
     // Keyboard controls for zoom
@@ -427,6 +503,44 @@ export class FileBrowser3D {
         duration: FileBrowser3D.ANIMATION_DURATION,
         ease: 'power2.out',
       });
+    });
+  }
+
+  private updateCardPositionsImmediate(): void {
+    this.cards.forEach((card, index) => {
+      // Calculate smooth distance from scroll center
+      const distanceFromCenter = Math.abs(index - this.scrollPosition);
+
+      // Smooth scale interpolation (1.0 to 1.15 at center, drops off smoothly)
+      const scale = 1.0 + 0.15 * Math.max(0, 1 - distanceFromCenter);
+
+      // Smooth elevation interpolation (0 to 0.8 at center, drops off smoothly)
+      const elevation = 0.6 * Math.max(0, 1 - distanceFromCenter);
+
+      // Calculate final position directly (relative to scrollPosition with elevation)
+      const centeredPosition = {
+        x:
+          (index - this.scrollPosition) *
+          FileBrowser3D.CARD_SPACING *
+          FileBrowser3D.DIAGONAL_X_RATIO,
+        y:
+          -(index - this.scrollPosition) *
+            FileBrowser3D.CARD_SPACING *
+            FileBrowser3D.DIAGONAL_Y_RATIO +
+          elevation,
+        z:
+          -(index - this.scrollPosition) *
+          FileBrowser3D.CARD_SPACING *
+          FileBrowser3D.DIAGONAL_Z_RATIO,
+      };
+
+      // Immediate position updates (no animation during drag)
+      card.position.set(
+        centeredPosition.x,
+        centeredPosition.y,
+        centeredPosition.z
+      );
+      card.scale.set(scale, scale, scale);
     });
   }
 
