@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 import * as CANNON from 'cannon-es';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 export interface FileItem {
   name: string;
@@ -27,6 +28,7 @@ export class FileBrowser3D {
   private static readonly fileHeight = 2.25;
   private static readonly folderColor = 0x707070;
   private static readonly fileColor = 0x888888;
+  private static readonly cornerRadius = 0.05;
 
   private scene: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
@@ -127,21 +129,65 @@ export class FileBrowser3D {
     this.scene.add(accentLight2);
   }
 
-  private createFolderGeometry(): THREE.BufferGeometry {
-    // Create the main body and add tab as separate mesh in createCard
-    const mainBody = new THREE.BoxGeometry(
-      FileBrowser3D.folderWidth,
-      FileBrowser3D.folderHeight,
-      0.075
-    );
-    return mainBody;
+  private drawFolderGeometry(): THREE.BufferGeometry {
+    // Create unified folder shape (body + tab) with consistent rounding
+    const shape = new THREE.Shape();
+    const w = FileBrowser3D.folderWidth;
+    const h = FileBrowser3D.folderHeight;
+    const tw = FileBrowser3D.tabWidth;
+    const th = FileBrowser3D.tabHeight;
+    const r = FileBrowser3D.cornerRadius;
+
+    // Start from bottom-left corner of main body
+    shape.moveTo(-w / 2 + r, -h / 2);
+
+    // Bottom edge (rounded corners)
+    shape.lineTo(w / 2 - r, -h / 2);
+    shape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+
+    // Right edge of body up to tab level
+    shape.lineTo(w / 2, h / 2 - r);
+
+    // Top-right corner of body (rounded)
+    shape.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+
+    // Top edge of body (where tab starts)
+    shape.lineTo(-w / 2 + tw, h / 2);
+
+    // Tab outline
+    shape.lineTo(-w / 2 + tw, h / 2 + th - r); // right edge of tab
+    shape.quadraticCurveTo(
+      -w / 2 + tw,
+      h / 2 + th,
+      -w / 2 + tw - r,
+      h / 2 + th
+    ); // top-right corner of tab
+    shape.lineTo(-w / 2 + r, h / 2 + th); // top edge of tab
+    shape.quadraticCurveTo(-w / 2, h / 2 + th, -w / 2, h / 2 + th - r); // top-left corner of tab
+    shape.lineTo(-w / 2, h / 2); // left edge of tab down to body
+
+    // Left edge of body down to bottom
+    shape.lineTo(-w / 2, -h / 2 + r);
+    shape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); // bottom-left corner
+
+    const extrudeSettings = {
+      depth: 0.075 - FileBrowser3D.cornerRadius * 2, // Compensate for bevel thickness
+      bevelEnabled: true,
+      bevelSize: FileBrowser3D.cornerRadius,
+      bevelThickness: FileBrowser3D.cornerRadius,
+      bevelSegments: 5,
+    };
+
+    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
   }
 
   private createFileGeometry(): THREE.BufferGeometry {
-    const mainBody = new THREE.BoxGeometry(
+    const mainBody = new RoundedBoxGeometry(
       FileBrowser3D.fileWidth,
       FileBrowser3D.fileHeight,
-      0.075
+      0.075,
+      5, // segments
+      FileBrowser3D.cornerRadius
     );
     return mainBody;
   }
@@ -158,38 +204,14 @@ export class FileBrowser3D {
     });
   }
 
-  private createFolderTab(): THREE.Mesh {
-    const tabGeometry = new THREE.BoxGeometry(
-      FileBrowser3D.tabWidth,
-      FileBrowser3D.tabHeight,
-      0.075
-    );
-
-    const tabMaterial = this.createCardMaterial(true);
-
-    const tabMesh = new THREE.Mesh(tabGeometry, tabMaterial);
-
-    // Position tab at top-left of main body
-    const tabOffsetY =
-      (FileBrowser3D.folderHeight + FileBrowser3D.tabHeight) / 2; // Position above main body
-    const tabOffsetX =
-      -(FileBrowser3D.folderWidth - FileBrowser3D.tabWidth) / 2; // Align to left edge
-    tabMesh.position.set(tabOffsetX, tabOffsetY, 0);
-
-    tabMesh.castShadow = true;
-    tabMesh.receiveShadow = true;
-
-    return tabMesh;
-  }
-
   private createCard(fileItem: FileItem, index: number): THREE.Group {
     const cardGroup = new THREE.Group();
 
     // Card geometry based on type
     const isFolder = fileItem.type === 'folder';
     const cardGeometry = isFolder
-      ? this.createFolderGeometry()
-      : this.createFileGeometry(); // new THREE.BoxGeometry(1.75, 2.25, 0.075);
+      ? this.drawFolderGeometry()
+      : this.createFileGeometry();
 
     const cardMaterial = this.createCardMaterial(isFolder);
 
@@ -199,10 +221,7 @@ export class FileBrowser3D {
 
     cardGroup.add(cardMesh);
 
-    if (isFolder) {
-      const tabMesh = this.createFolderTab();
-      cardGroup.add(tabMesh);
-    }
+    // Tab is now part of unified folder geometry, no separate mesh needed
 
     // Position cards in a diagonal row (top-left to bottom-right)
     const diagonalOffset = index * FileBrowser3D.CARD_SPACING;
