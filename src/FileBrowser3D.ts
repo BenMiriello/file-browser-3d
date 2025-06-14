@@ -12,14 +12,14 @@ export interface FileItem {
 }
 
 export class FileBrowser3D {
-  // Positioning
+  // Positioning constants
   private static readonly CARD_SPACING = 1.5;
   private static readonly DIAGONAL_X_RATIO = -0.5;
   private static readonly DIAGONAL_Y_RATIO = -0.5;
   private static readonly DIAGONAL_Z_RATIO = 0.1;
   private static readonly ANIMATION_DURATION = 0.1;
 
-  // File Geometry
+  // File Geometry constants
   private static readonly folderWidth = 2.25;
   private static readonly folderHeight = 1.75;
   private static readonly tabHeight = 0.5;
@@ -29,6 +29,7 @@ export class FileBrowser3D {
   private static readonly folderColor = 0x707070;
   private static readonly fileColor = 0x888888;
   private static readonly cornerRadius = 0.05;
+  private static readonly cardThickness = 0.075;
 
   private scene: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
@@ -38,6 +39,9 @@ export class FileBrowser3D {
   private cardBodies: CANNON.Body[] = [];
   private scrollPosition = 0;
   private isAnimating = false;
+  private zoomControl: HTMLElement | null = null;
+  private zoomSlider: HTMLElement | null = null;
+  private isDragging = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
@@ -171,7 +175,7 @@ export class FileBrowser3D {
     shape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); // bottom-left corner
 
     const extrudeSettings = {
-      depth: 0.075 - FileBrowser3D.cornerRadius * 2, // Compensate for bevel thickness
+      depth: FileBrowser3D.cardThickness - FileBrowser3D.cornerRadius * 2, // Compensate for bevel thickness
       bevelEnabled: true,
       bevelSize: FileBrowser3D.cornerRadius,
       bevelThickness: FileBrowser3D.cornerRadius,
@@ -185,7 +189,7 @@ export class FileBrowser3D {
     const mainBody = new RoundedBoxGeometry(
       FileBrowser3D.fileWidth,
       FileBrowser3D.fileHeight,
-      0.075,
+      FileBrowser3D.cardThickness,
       5, // segments
       FileBrowser3D.cornerRadius
     );
@@ -426,6 +430,113 @@ export class FileBrowser3D {
     this.renderer.render(this.scene, this.camera);
   }
 
+  private createZoomControl(): void {
+    // Create zoom control container
+    this.zoomControl = document.createElement('div');
+    Object.assign(this.zoomControl.style, {
+      position: 'fixed',
+      bottom: '40px',
+      right: '40px',
+      width: '2px',
+      height: '160px',
+      backgroundColor: '#999999',
+      zIndex: '1000',
+    });
+
+    // Create zoom slider
+    this.zoomSlider = document.createElement('div');
+    Object.assign(this.zoomSlider.style, {
+      position: 'absolute',
+      width: '12px',
+      height: '12px',
+      backgroundColor: '#999999',
+      borderRadius: '50%',
+      left: '-5px',
+      bottom: '50%',
+      cursor: 'pointer',
+      transition: 'all 0.1s ease',
+    });
+
+    this.zoomControl.appendChild(this.zoomSlider);
+    document.body.appendChild(this.zoomControl);
+
+    // Add drag functionality
+    this.setupZoomDrag();
+  }
+
+  private setupZoomDrag(): void {
+    if (!this.zoomSlider || !this.zoomControl) return;
+
+    const startDrag = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
+      this.isDragging = true;
+
+      // Active state styling
+      Object.assign(this.zoomSlider!.style, {
+        width: '16px',
+        height: '16px',
+        left: '-7px',
+        backgroundColor: '#cccccc',
+      });
+
+      document.addEventListener('mousemove', drag);
+      document.addEventListener('mouseup', endDrag);
+      document.addEventListener('touchmove', drag);
+      document.addEventListener('touchend', endDrag);
+    };
+
+    const drag = (e: MouseEvent | TouchEvent) => {
+      if (!this.isDragging || !this.zoomControl || !this.zoomSlider) return;
+
+      const rect = this.zoomControl.getBoundingClientRect();
+      const clientY = 'touches' in e ? e.touches[0]?.clientY : e.clientY;
+      if (clientY === undefined) return;
+      const relativeY = clientY - rect.top;
+      const percentage = Math.max(0, Math.min(1, 1 - relativeY / rect.height));
+
+      this.zoomSlider.style.bottom = `${percentage * 100}%`;
+
+      // Update scale (0.5x to 2x range)
+      const newScale = 0.5 + percentage * 1.5;
+      this.updateScale(newScale);
+    };
+
+    const endDrag = () => {
+      this.isDragging = false;
+
+      // Inactive state styling
+      Object.assign(this.zoomSlider!.style, {
+        width: '12px',
+        height: '12px',
+        left: '-5px',
+        backgroundColor: '#999999',
+      });
+
+      document.removeEventListener('mousemove', drag);
+      document.removeEventListener('mouseup', endDrag);
+      document.removeEventListener('touchmove', drag);
+      document.removeEventListener('touchend', endDrag);
+    };
+
+    this.zoomSlider.addEventListener('mousedown', startDrag);
+    this.zoomSlider.addEventListener('touchstart', startDrag);
+  }
+
+  private updateScale(newScale: number): void {
+    // Just scale the entire scene instead of rebuilding
+    this.scene.scale.setScalar(newScale);
+
+    // Update camera frustum to maintain proper view
+    const aspect = window.innerWidth / window.innerHeight;
+    const frustumSize = 10 / newScale; // Inverse scale for frustum
+
+    this.camera.left = (-frustumSize * aspect) / 2;
+    this.camera.right = (frustumSize * aspect) / 2;
+    this.camera.top = frustumSize / 2;
+    this.camera.bottom = -frustumSize / 2;
+    this.camera.updateProjectionMatrix();
+  }
+
   public init(): void {
     // Create test cards
     const testData = this.createTestData();
@@ -436,7 +547,7 @@ export class FileBrowser3D {
     });
 
     // Initial card positioning handled by smooth system
-
+    this.createZoomControl();
     this.setupEventListeners();
     this.animate();
   }
