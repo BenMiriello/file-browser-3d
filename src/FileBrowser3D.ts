@@ -5,6 +5,7 @@ import { TextRenderer } from './TextRenderer';
 import { SceneSetup } from './SceneSetup';
 import { ZoomControls } from './ZoomControls';
 import { InputHandlers } from './InputHandlers';
+import { FileSystemReader } from './FileSystemReader';
 
 export interface FileItem {
   name: string;
@@ -60,7 +61,41 @@ export class FileBrowser3D {
     return cardGroup;
   }
 
-  private createTestData(): FileItem[] {
+  private async loadFileSystemData(): Promise<FileItem[]> {
+    // Always start with fallback data - file system access requires user interaction
+    return this.createFallbackData();
+  }
+
+  private async loadRealFileSystem(): Promise<void> {
+    try {
+      this.showLoadingState();
+      const files = await FileSystemReader.readDirectory();
+
+      if (files.length > 0) {
+        // Clear existing cards
+        this.cards.forEach(card => this.scene.remove(card));
+        this.cards = [];
+
+        // Create new cards from real file system
+        files.forEach((item, index) => {
+          const card = this.createCard(item, index);
+          this.cards.push(card);
+          this.scene.add(card);
+        });
+
+        // Reset scroll position and update positions
+        this.scrollPosition = 0;
+        this.updateCardPositions();
+      }
+    } catch (error) {
+      console.error('Failed to load real file system:', error);
+      this.showErrorState('Failed to access file system');
+    } finally {
+      this.hideLoadingState();
+    }
+  }
+
+  private createFallbackData(): FileItem[] {
     return [
       { name: 'Documents', type: 'folder', path: '/Documents', children: [] },
       { name: 'Projects', type: 'folder', path: '/Projects', children: [] },
@@ -211,26 +246,186 @@ export class FileBrowser3D {
     this.renderer.render(this.scene, this.camera);
   }
 
-  public init(): void {
-    const testData = this.createTestData();
-    testData.forEach((item, index) => {
-      const card = this.createCard(item, index);
-      this.cards.push(card);
-      this.scene.add(card);
+  public async init(): Promise<void> {
+    try {
+      // Load fallback data (no loading state - instant)
+      const fileData = await this.loadFileSystemData();
+
+      // Create cards from loaded data
+      fileData.forEach((item, index) => {
+        const card = this.createCard(item, index);
+        this.cards.push(card);
+        this.scene.add(card);
+      });
+
+      // Initialize zoom controls
+      this.zoomControls = new ZoomControls(this.scene, this.camera, () => {
+        // Handle window resize for renderer
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+      this.zoomControls.createZoomControl();
+
+      // Create file system button
+      this.createFileSystemButton();
+
+      this.setupEventListeners();
+
+      // Initialize card positions so the first card is raised on load
+      this.updateCardPositions();
+
+      this.animate();
+    } catch (error) {
+      console.error('Failed to initialize FileBrowser3D:', error);
+      this.showErrorState('Failed to load file system');
+    }
+  }
+
+  private getHomePath(): string {
+    // For mobile devices, just show a generic message
+    const isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        window.navigator.userAgent
+      );
+
+    if (isMobile) {
+      return 'your files';
+    }
+
+    // For desktop, try to detect path
+    const isWindows =
+      window.navigator.platform.toUpperCase().indexOf('WIN') >= 0;
+    const isMac =
+      window.navigator.userAgent.includes('Mac') ||
+      window.navigator.platform.includes('Mac');
+
+    let username = 'user';
+    const currentLocation = window.location.hostname;
+    if (currentLocation === 'localhost' || currentLocation === '127.0.0.1') {
+      // Development environment - use known username
+      username = 'benmiriello';
+    }
+
+    if (isMac) {
+      return `/Users/${username}`;
+    } else if (isWindows) {
+      return `C:\\Users\\${username}`;
+    } else {
+      // Linux/Unix
+      return `/home/${username}`;
+    }
+  }
+
+  private createFileSystemButton(): void {
+    console.log('Creating file system button...');
+    console.log(
+      'File System API supported:',
+      FileSystemReader.isFileSystemAPISupported()
+    );
+
+    // Always show button for debugging - remove this condition temporarily
+    // if (!FileSystemReader.isFileSystemAPISupported()) {
+    //   return;
+    // }
+
+    const homePath = this.getHomePath();
+    console.log('Home path detected:', homePath);
+
+    const button = document.createElement('button');
+    button.textContent = FileSystemReader.isFileSystemAPISupported()
+      ? `Browse ${homePath}`
+      : `File System Not Supported`;
+    Object.assign(button.style, {
+      position: 'fixed',
+      top: '40px',
+      left: '40px',
+      padding: '12px 20px',
+      backgroundColor: FileSystemReader.isFileSystemAPISupported()
+        ? '#333333'
+        : '#666666',
+      color: 'white',
+      border: 'none',
+      borderRadius: '6px',
+      fontSize: '14px',
+      fontFamily: 'Arial, sans-serif',
+      cursor: FileSystemReader.isFileSystemAPISupported()
+        ? 'pointer'
+        : 'not-allowed',
+      zIndex: '1000',
+      transition: 'background-color 0.2s ease',
+      whiteSpace: 'nowrap',
     });
 
-    // Initialize zoom controls
-    this.zoomControls = new ZoomControls(this.scene, this.camera, () => {
-      // Handle window resize for renderer
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-    this.zoomControls.createZoomControl();
+    // Hover effect only if supported
+    if (FileSystemReader.isFileSystemAPISupported()) {
+      button.addEventListener('mouseenter', () => {
+        button.style.backgroundColor = '#555555';
+      });
+      button.addEventListener('mouseleave', () => {
+        button.style.backgroundColor = '#333333';
+      });
 
-    this.setupEventListeners();
+      // Click handler
+      button.addEventListener('click', () => {
+        console.log('Button clicked, loading real file system...');
+        this.loadRealFileSystem();
+      });
+    }
 
-    // Initialize card positions so the first card is raised on load
-    this.updateCardPositions();
+    document.body.appendChild(button);
+    console.log('Button added to DOM');
+  }
 
-    this.animate();
+  private showLoadingState(): void {
+    // Create simple loading indicator
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'file-browser-loading';
+    loadingDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      z-index: 1000;
+    `;
+    loadingDiv.textContent = 'Loading files...';
+    document.body.appendChild(loadingDiv);
+  }
+
+  private hideLoadingState(): void {
+    const loadingDiv = document.getElementById('file-browser-loading');
+    if (loadingDiv) {
+      document.body.removeChild(loadingDiv);
+    }
+  }
+
+  private showErrorState(message: string): void {
+    this.hideLoadingState();
+
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff6b6b;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      text-align: center;
+      z-index: 1000;
+    `;
+    errorDiv.innerHTML = `
+      <div>${message}</div>
+      <div style="font-size: 14px; margin-top: 10px;">Using fallback data instead</div>
+    `;
+    document.body.appendChild(errorDiv);
+
+    // Remove error message after 3 seconds
+    window.setTimeout(() => {
+      if (errorDiv.parentNode) {
+        document.body.removeChild(errorDiv);
+      }
+    }, 3000);
   }
 }
