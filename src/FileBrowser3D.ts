@@ -34,6 +34,8 @@ export class FileBrowser3D {
   private renderer!: THREE.WebGLRenderer;
   private cards: THREE.Group[] = [];
   private scrollPosition = 0;
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
   private isAnimating = false;
   private zoomControl: HTMLElement | null = null;
   private zoomSlider: HTMLElement | null = null;
@@ -278,6 +280,9 @@ export class FileBrowser3D {
     // Add text label
     this.addTextToCard(cardGroup, fileItem.name, isFolder);
 
+    // Store index for click detection
+    cardGroup.userData = { index };
+
     // Position cards in a diagonal row (top-left to bottom-right)
     const diagonalOffset = index * FileBrowser3D.CARD_SPACING;
     cardGroup.position.set(
@@ -484,6 +489,26 @@ export class FileBrowser3D {
       }
     });
 
+    // Click/tap to center cards
+    this.canvas.addEventListener('click', event => {
+      this.handleCardClick(event.clientX, event.clientY);
+    });
+
+    // Simple mobile tap detection - override the existing touchend handler
+    this.canvas.addEventListener(
+      'touchend',
+      event => {
+        // Only process single touch taps
+        if (event.changedTouches.length === 1) {
+          const touch = event.changedTouches[0];
+          if (touch) {
+            this.handleCardClick(touch.clientX, touch.clientY);
+          }
+        }
+      },
+      { capture: true }
+    ); // Use capture to run before other touch handlers
+
     // Window resize
     window.addEventListener('resize', () => {
       const aspect = window.innerWidth / window.innerHeight;
@@ -496,6 +521,67 @@ export class FileBrowser3D {
       this.camera.updateProjectionMatrix();
 
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  }
+
+  private handleCardClick(clientX: number, clientY: number): void {
+    if (this.isAnimating) return;
+
+    // Convert mouse/touch coordinates to normalized device coordinates
+    this.mouse.x = (clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+    // Set up raycaster
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Get all meshes from all cards for intersection testing
+    const intersectObjects: THREE.Object3D[] = [];
+    this.cards.forEach(card => {
+      card.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          intersectObjects.push(child);
+        }
+      });
+    });
+
+    // Find intersections
+    const intersects = this.raycaster.intersectObjects(intersectObjects);
+
+    if (intersects.length > 0) {
+      // Find the card group that contains the clicked mesh
+      let clickedCard: THREE.Group | null = null;
+      let parent = intersects[0]?.object?.parent;
+
+      while (parent && !clickedCard) {
+        if (
+          parent instanceof THREE.Group &&
+          parent.userData['index'] !== undefined
+        ) {
+          clickedCard = parent;
+        }
+        parent = parent?.parent;
+      }
+
+      if (clickedCard && clickedCard.userData['index'] !== undefined) {
+        this.centerCard(clickedCard.userData['index']);
+      }
+    }
+  }
+
+  private centerCard(targetIndex: number): void {
+    if (this.isAnimating || targetIndex === this.scrollPosition) return;
+
+    this.isAnimating = true;
+
+    // Animate to center the clicked card
+    gsap.to(this, {
+      scrollPosition: targetIndex,
+      duration: FileBrowser3D.ANIMATION_DURATION * 4,
+      ease: 'power2.out',
+      onUpdate: () => this.updateCardPositions(),
+      onComplete: () => {
+        this.isAnimating = false;
+      },
     });
   }
 
@@ -793,6 +879,10 @@ export class FileBrowser3D {
     this.createZoomControl();
     this.setupEventListeners();
     this.updateScale();
+
+    // Initialize card positions so the first card is raised on load
+    this.updateCardPositions();
+
     this.animate();
   }
 }
