@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { gsap } from 'gsap';
-import * as CANNON from 'cannon-es';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 export interface FileItem {
@@ -34,9 +33,7 @@ export class FileBrowser3D {
   private scene: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
   private renderer!: THREE.WebGLRenderer;
-  private world!: CANNON.World;
   private cards: THREE.Group[] = [];
-  private cardBodies: CANNON.Body[] = [];
   private scrollPosition = 0;
   private isAnimating = false;
   private zoomControl: HTMLElement | null = null;
@@ -47,7 +44,6 @@ export class FileBrowser3D {
     this.scene = new THREE.Scene();
     this.setupCamera();
     this.setupRenderer();
-    this.setupPhysics();
     this.setupLighting();
   }
 
@@ -83,20 +79,6 @@ export class FileBrowser3D {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
-  }
-
-  private setupPhysics(): void {
-    this.world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, 0, 0),
-    });
-
-    this.world.broadphase = new CANNON.NaiveBroadphase();
-    // Set solver iterations if available
-    if ('iterations' in this.world.solver) {
-      (this.world.solver as any).iterations = 10;
-    }
-    this.world.defaultContactMaterial.friction = 0.4;
-    this.world.defaultContactMaterial.restitution = 0.3;
   }
 
   private setupLighting(): void {
@@ -234,21 +216,6 @@ export class FileBrowser3D {
       -diagonalOffset * FileBrowser3D.DIAGONAL_Y_RATIO,
       -diagonalOffset * FileBrowser3D.DIAGONAL_Z_RATIO
     );
-
-    // Add physics body with no mass (kinematic)
-    const cardShape = new CANNON.Box(new CANNON.Vec3(0.875, 1.125, 0.0375));
-    const cardBody = new CANNON.Body({
-      mass: 0, // Kinematic body - won't fall
-      shape: cardShape,
-      position: new CANNON.Vec3(
-        cardGroup.position.x,
-        cardGroup.position.y,
-        cardGroup.position.z
-      ),
-    });
-
-    this.world.addBody(cardBody);
-    this.cardBodies.push(cardBody);
 
     return cardGroup;
   }
@@ -398,34 +365,11 @@ export class FileBrowser3D {
         duration: FileBrowser3D.ANIMATION_DURATION,
         ease: 'power2.out',
       });
-
-      // Update physics body position (no animation needed)
-      if (this.cardBodies[index]) {
-        this.cardBodies[index].position.set(
-          centeredPosition.x,
-          centeredPosition.y,
-          centeredPosition.z
-        );
-      }
     });
   }
 
   private animate(): void {
     requestAnimationFrame(() => this.animate());
-
-    // Update physics
-    this.world.step(1 / 60);
-
-    // Only sync physics if not animating (let GSAP control during animations)
-    if (!this.isAnimating) {
-      this.cards.forEach((card, index) => {
-        const body = this.cardBodies[index];
-        if (body) {
-          card.position.copy(body.position as any);
-          card.quaternion.copy(body.quaternion as any);
-        }
-      });
-    }
 
     this.renderer.render(this.scene, this.camera);
   }
