@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
+import globals from 'globals';
 
 export default [
   js.configs.recommended,
@@ -14,10 +15,13 @@ export default [
         project: './tsconfig.json',
       },
       globals: {
+        ...globals.browser,
+        ...globals.node,
         window: 'readonly',
         document: 'readonly',
         requestAnimationFrame: 'readonly',
         console: 'readonly',
+        NodeJS: "readonly",
       },
     },
     plugins: {
@@ -32,6 +36,7 @@ export default [
       'prefer-const': 'error',
       'no-console': 'warn',
       'no-debugger': 'error',
+      'max-len': ['error', { code: 100 }],
     },
   },
   {

@@ -4,10 +4,14 @@ import { gsap } from 'gsap';
 export class ZoomControls {
   private zoomControl: HTMLElement | null = null;
   private zoomSlider: HTMLElement | null = null;
+  private zoomTrack: HTMLElement | null = null;
   private isDragging = false;
   private currentZoom = 1.1;
   private readonly MIN_ZOOM = 0.7;
   private readonly MAX_ZOOM = 1.5;
+  private fadeTimeout: NodeJS.Timeout | null = null;
+  private trackRestingOpacity = '0.2';
+  private sliderRestingOpacity = '0.5';
 
   constructor(
     private scene: THREE.Scene,
@@ -29,18 +33,20 @@ export class ZoomControls {
     });
 
     // Create visible track (thin line)
-    const track = document.createElement('div');
-    Object.assign(track.style, {
+    this.zoomTrack = document.createElement('div');
+    Object.assign(this.zoomTrack.style, {
       position: 'absolute',
       left: '9px', // Center the 2px line in 20px container
       top: '0',
       width: '2px',
       height: '100%',
       backgroundColor: '#999999',
+      opacity: this.trackRestingOpacity,
+      transition: 'opacity 0.5s ease',
       pointerEvents: 'none',
     });
 
-    this.zoomControl.appendChild(track);
+    this.zoomControl.appendChild(this.zoomTrack);
 
     // Create zoom slider
     this.zoomSlider = document.createElement('div');
@@ -53,14 +59,14 @@ export class ZoomControls {
       left: '4px', // Center in 20px container (10px - 6px = 4px)
       bottom: '50%',
       cursor: 'pointer',
-      transition: 'all 0.1s ease',
+      opacity: this.sliderRestingOpacity,
+      transition: 'all 0.1s ease, opacity 0.5s ease',
       pointerEvents: 'none', // Let container handle clicks
     });
 
     this.zoomControl.appendChild(this.zoomSlider);
     document.body.appendChild(this.zoomControl);
 
-    // Add drag functionality
     this.setupZoomDrag();
 
     // Initialize slider position
@@ -70,19 +76,28 @@ export class ZoomControls {
   private setupZoomDrag(): void {
     if (!this.zoomSlider || !this.zoomControl) return;
 
-    const startDrag = (e: MouseEvent | TouchEvent) => {
+    const startDrag = (e: MouseEvent | TouchEvent): void => {
       e.preventDefault();
       this.isDragging = true;
 
-      // Active state styling
+      if (this.fadeTimeout) {
+        clearTimeout(this.fadeTimeout);
+        this.fadeTimeout = null;
+      }
+
       Object.assign(this.zoomSlider!.style, {
         width: '16px',
         height: '16px',
         left: '2px', // Adjust for larger size in 20px container
         backgroundColor: '#cccccc',
+        opacity: '1.0',
       });
 
-      // If clicked directly on track (not during drag), jump to that position
+      if (this.zoomTrack) {
+        this.zoomTrack.style.opacity = '1.0';
+      }
+
+      // Jump to position when user clicks on track
       if (e.type === 'mousedown' || e.type === 'touchstart') {
         const rect = this.zoomControl!.getBoundingClientRect();
         const clientY = 'touches' in e ? e.touches[0]?.clientY : e.clientY;
@@ -104,7 +119,7 @@ export class ZoomControls {
       document.addEventListener('touchend', endDrag);
     };
 
-    const drag = (e: MouseEvent | TouchEvent) => {
+    const drag = (e: MouseEvent | TouchEvent): void => {
       if (!this.isDragging || !this.zoomControl || !this.zoomSlider) return;
 
       const rect = this.zoomControl.getBoundingClientRect();
@@ -121,16 +136,26 @@ export class ZoomControls {
       this.setZoom(newScale);
     };
 
-    const endDrag = () => {
+    const endDrag = (): void => {
       this.isDragging = false;
 
-      // Inactive state styling
+      // Inactive state styling (but keep full opacity for now)
       Object.assign(this.zoomSlider!.style, {
         width: '12px',
         height: '12px',
         left: '4px', // Center in 20px container
         backgroundColor: '#999999',
       });
+
+      this.fadeTimeout = setTimeout(() => {
+        if (this.zoomSlider && !this.isDragging) {
+          this.zoomSlider.style.opacity = this.sliderRestingOpacity;
+        }
+        if (this.zoomTrack && !this.isDragging) {
+          this.zoomTrack.style.opacity = this.trackRestingOpacity;
+        }
+        this.fadeTimeout = null;
+      }, 1000);
 
       document.removeEventListener('mousemove', drag);
       document.removeEventListener('mouseup', endDrag);
