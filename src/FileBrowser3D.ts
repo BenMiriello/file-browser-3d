@@ -6,6 +6,8 @@ import { SceneSetup } from './SceneSetup';
 import { ZoomControls } from './ZoomControls';
 import { InputHandlers } from './InputHandlers';
 import { FileSystemReader } from './FileSystemReader';
+import { AnimationManager } from './animations/AnimationManager';
+import { TransitionContext } from './animations/ITransition';
 
 export interface FileItem {
   name: string;
@@ -31,12 +33,16 @@ export class FileBrowser3D {
   private isAnimating = false;
   private zoomControls!: ZoomControls;
   private inputHandlers!: InputHandlers;
+  private animationManager: AnimationManager;
+  private currentDirectory: FileItem[] = [];
+  private navigationStack: FileItem[][] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
     this.camera = SceneSetup.setupCamera();
     this.renderer = SceneSetup.setupRenderer(this.canvas);
     SceneSetup.setupLighting(this.scene);
+    this.animationManager = new AnimationManager();
   }
 
   private createCard(fileItem: FileItem, index: number): THREE.Group {
@@ -61,9 +67,28 @@ export class FileBrowser3D {
     return cardGroup;
   }
 
+  private createCardsFromData(fileData: FileItem[]): void {
+    // Clear existing cards
+    this.cards.forEach(card => this.scene.remove(card));
+    this.cards = [];
+
+    // Create new cards
+    fileData.forEach((item, index) => {
+      const card = this.createCard(item, index);
+      this.cards.push(card);
+      this.scene.add(card);
+    });
+
+    // Reset scroll position and update positions
+    this.scrollPosition = 0;
+    this.updateCardPositions();
+  }
+
   private async loadFileSystemData(): Promise<FileItem[]> {
     // Always start with fallback data - file system access requires user interaction
-    return this.createFallbackData();
+    const data = this.createFallbackData();
+    this.currentDirectory = data;
+    return data;
   }
 
   private async loadRealFileSystem(): Promise<void> {
@@ -76,16 +101,9 @@ export class FileBrowser3D {
         this.cards.forEach(card => this.scene.remove(card));
         this.cards = [];
 
-        // Create new cards from real file system
-        files.forEach((item, index) => {
-          const card = this.createCard(item, index);
-          this.cards.push(card);
-          this.scene.add(card);
-        });
-
-        // Reset scroll position and update positions
-        this.scrollPosition = 0;
-        this.updateCardPositions();
+        // Update current directory and create new cards
+        this.currentDirectory = files;
+        this.createCardsFromData(files);
       }
     } catch (error) {
       console.error('Failed to load real file system:', error);
@@ -112,7 +130,7 @@ export class FileBrowser3D {
     // Set up input handlers
     this.inputHandlers = new InputHandlers(
       this.canvas,
-      this.cards,
+      () => this.cards,
       this.camera,
       () => this.scrollPosition,
       (pos: number) => {
@@ -123,7 +141,8 @@ export class FileBrowser3D {
       (direction: number) => this.navigateCards(direction),
       (zoom: number) => this.zoomControls.setZoom(zoom),
       () => this.zoomControls.getCurrentZoom(),
-      FileBrowser3D.ANIMATION_DURATION
+      FileBrowser3D.ANIMATION_DURATION,
+      (cardIndex: number) => this.onCardClick(cardIndex)
     );
 
     this.inputHandlers.setupEventListeners();
@@ -252,11 +271,7 @@ export class FileBrowser3D {
       const fileData = await this.loadFileSystemData();
 
       // Create cards from loaded data
-      fileData.forEach((item, index) => {
-        const card = this.createCard(item, index);
-        this.cards.push(card);
-        this.scene.add(card);
-      });
+      this.createCardsFromData(fileData);
 
       // Initialize zoom controls
       this.zoomControls = new ZoomControls(this.scene, this.camera, () => {
@@ -316,19 +331,12 @@ export class FileBrowser3D {
   }
 
   private createFileSystemButton(): void {
-    console.log('Creating file system button...');
-    console.log(
-      'File System API supported:',
-      FileSystemReader.isFileSystemAPISupported()
-    );
-
-    // Always show button for debugging - remove this condition temporarily
-    // if (!FileSystemReader.isFileSystemAPISupported()) {
-    //   return;
-    // }
+    // Only show button if File System Access API is supported
+    if (!FileSystemReader.isFileSystemAPISupported()) {
+      return;
+    }
 
     const homePath = this.getHomePath();
-    console.log('Home path detected:', homePath);
 
     const button = document.createElement('button');
     button.textContent = FileSystemReader.isFileSystemAPISupported()
@@ -366,13 +374,11 @@ export class FileBrowser3D {
 
       // Click handler
       button.addEventListener('click', () => {
-        console.log('Button clicked, loading real file system...');
         this.loadRealFileSystem();
       });
     }
 
     document.body.appendChild(button);
-    console.log('Button added to DOM');
   }
 
   private showLoadingState(): void {
@@ -427,5 +433,175 @@ export class FileBrowser3D {
         document.body.removeChild(errorDiv);
       }
     }, 3000);
+  }
+
+  private async onCardClick(cardIndex: number): Promise<void> {
+    if (this.animationManager.isAnimating()) return;
+
+    const selectedItem = this.currentDirectory[cardIndex];
+    if (!selectedItem) return;
+
+    // Handle back navigation (..)
+    if (selectedItem.name === '..') {
+      await this.navigateBack();
+      return;
+    }
+
+    // Handle regular folder navigation
+    if (selectedItem.type !== 'folder') return;
+
+    // For now, create mock folder contents
+    const folderContents = this.createMockFolderContents(selectedItem.name);
+
+    await this.navigateToFolder(selectedItem, folderContents, cardIndex);
+  }
+
+  private async navigateToFolder(
+    folder: FileItem,
+    newContents: FileItem[],
+    selectedCardIndex: number
+  ): Promise<void> {
+    // Save current directory to navigation stack
+    this.navigationStack.push([...this.currentDirectory]);
+
+    // Create new cards for folder contents
+    const newCards: THREE.Group[] = [];
+    newContents.forEach((item, index) => {
+      const card = this.createCard(item, index);
+      newCards.push(card);
+    });
+
+    // Set up transition context
+    const context: TransitionContext = {
+      scene: this.scene,
+      currentCards: [...this.cards],
+      newCards,
+      selectedFolder: folder,
+      selectedCardIndex,
+    };
+
+    // Execute transition
+    await this.animationManager.executeTransition('dropAndFan', context);
+
+    // Clean up old cards
+    this.cards.forEach(card => this.scene.remove(card));
+
+    // Update state
+    this.cards = newCards;
+    this.currentDirectory = newContents;
+    this.scrollPosition = 0;
+  }
+
+  private createMockFolderContents(folderName: string): FileItem[] {
+    // Create some mock contents based on folder name
+    const mockContents: FileItem[] = [
+      { name: '..', type: 'folder', path: '../', children: [] }, // Back button
+    ];
+
+    switch (folderName.toLowerCase()) {
+      case 'documents':
+        mockContents.push(
+          {
+            name: 'Report.pdf',
+            type: 'file',
+            size: 2048,
+            path: '/Documents/Report.pdf',
+          },
+          {
+            name: 'Notes.txt',
+            type: 'file',
+            size: 512,
+            path: '/Documents/Notes.txt',
+          },
+          {
+            name: 'Presentations',
+            type: 'folder',
+            path: '/Documents/Presentations',
+            children: [],
+          }
+        );
+        break;
+      case 'projects':
+        mockContents.push(
+          {
+            name: 'WebApp',
+            type: 'folder',
+            path: '/Projects/WebApp',
+            children: [],
+          },
+          {
+            name: 'MobileApp',
+            type: 'folder',
+            path: '/Projects/MobileApp',
+            children: [],
+          },
+          {
+            name: 'README.md',
+            type: 'file',
+            size: 1024,
+            path: '/Projects/README.md',
+          }
+        );
+        break;
+      case 'images':
+        mockContents.push(
+          {
+            name: 'vacation.jpg',
+            type: 'file',
+            size: 3072,
+            path: '/Images/vacation.jpg',
+          },
+          {
+            name: 'family.png',
+            type: 'file',
+            size: 2560,
+            path: '/Images/family.png',
+          },
+          {
+            name: 'Screenshots',
+            type: 'folder',
+            path: '/Images/Screenshots',
+            children: [],
+          }
+        );
+        break;
+      default:
+        mockContents.push(
+          {
+            name: 'file1.txt',
+            type: 'file',
+            size: 1024,
+            path: `/${folderName}/file1.txt`,
+          },
+          {
+            name: 'file2.txt',
+            type: 'file',
+            size: 512,
+            path: `/${folderName}/file2.txt`,
+          },
+          {
+            name: 'subfolder',
+            type: 'folder',
+            path: `/${folderName}/subfolder`,
+            children: [],
+          }
+        );
+    }
+
+    return mockContents;
+  }
+
+  public async navigateBack(): Promise<void> {
+    if (
+      this.navigationStack.length === 0 ||
+      this.animationManager.isAnimating()
+    )
+      return;
+
+    const previousDirectory = this.navigationStack.pop()!;
+
+    // Simple transition back (could use different animation)
+    this.createCardsFromData(previousDirectory);
+    this.currentDirectory = previousDirectory;
   }
 }

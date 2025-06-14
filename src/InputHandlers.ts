@@ -12,7 +12,7 @@ export class InputHandlers {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private cards: THREE.Group[],
+    private getCards: () => THREE.Group[],
     private camera: THREE.Camera,
     private scrollPosition: () => number,
     private setScrollPosition: (pos: number) => void,
@@ -21,7 +21,8 @@ export class InputHandlers {
     private navigateCards: (direction: number) => void,
     private setZoom: (zoom: number) => void,
     private getCurrentZoom: () => number,
-    private animationDuration: number
+    private animationDuration: number,
+    private onCardClick?: (cardIndex: number) => void
   ) {}
 
   setupEventListeners(): void {
@@ -135,7 +136,7 @@ export class InputHandlers {
       // Calculate new scroll position relative to start
       const newScrollPosition = Math.max(
         0,
-        Math.min(this.cards.length - 1, startScrollPosition + scrollDelta)
+        Math.min(this.getCards().length - 1, startScrollPosition + scrollDelta)
       );
 
       // Update scroll position in real-time (skip animations during drag)
@@ -177,7 +178,7 @@ export class InputHandlers {
         // Clamp to valid range and snap to nearest whole position
         const clampedTarget = Math.max(
           0,
-          Math.min(this.cards.length - 1, targetPosition)
+          Math.min(this.getCards().length - 1, targetPosition)
         );
         const snappedPosition = Math.round(clampedTarget);
 
@@ -304,7 +305,7 @@ export class InputHandlers {
 
     // Get all meshes from all cards for intersection testing
     const intersectObjects: THREE.Object3D[] = [];
-    this.cards.forEach(card => {
+    this.getCards().forEach(card => {
       card.traverse(child => {
         if (child instanceof THREE.Mesh) {
           intersectObjects.push(child);
@@ -331,7 +332,17 @@ export class InputHandlers {
       }
 
       if (clickedCard && clickedCard.userData['index'] !== undefined) {
-        this.centerCard(clickedCard.userData['index']);
+        const cardIndex = clickedCard.userData['index'];
+        // If we have a click handler and the card is already centered, trigger folder navigation
+        if (
+          this.onCardClick &&
+          cardIndex === Math.round(this.scrollPosition())
+        ) {
+          this.onCardClick(cardIndex);
+        } else {
+          // Otherwise just center the card
+          this.centerCard(cardIndex);
+        }
       }
     }
   }
