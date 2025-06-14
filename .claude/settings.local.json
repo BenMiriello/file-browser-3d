@@ -18,7 +18,8 @@
       "Bash(mkdir:*)",
       "Bash(npm run screenshot:claude:*)",
       "Bash(ls:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": []
   }
