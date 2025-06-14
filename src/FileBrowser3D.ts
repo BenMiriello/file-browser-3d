@@ -305,10 +305,9 @@ export class FileBrowser3D {
         z: basePosition.z - selectedBasePosition.z,
       };
 
-      // Selected card gets a lift
+      // Lift selected card
       if (isSelected) {
         centeredPosition.y += 0.8;
-        centeredPosition.z += 0.3;
       }
 
       // Smooth animations with responsive easing - 3x faster
